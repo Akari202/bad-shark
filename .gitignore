@@ -1,0 +1,7 @@
+/target
+.idea/
+.vscode/
+.env
+*.xlsx
+info
+src/test_car.rs
