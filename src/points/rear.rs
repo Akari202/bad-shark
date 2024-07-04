@@ -1,5 +1,6 @@
 use vec_utils::vec3d::Vec3d;
 use crate::points::members::{InnerCV, Damper, HArm, RadiusRod, Wheel};
+use crate::units::Distance;
 
 #[derive(Debug)]
 pub struct RearPoints {
@@ -10,8 +11,4 @@ pub struct RearPoints {
     pub axle: InnerCV
 }
 
-impl RearPoints {
-    pub fn track_width(&self) -> f64 {
-        self.wheel.center.y * 2.0
-    }
-}
+impl RearPoints {}

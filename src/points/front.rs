@@ -1,6 +1,7 @@
 use log::info;
 use vec_utils::vec3d::Vec3d;
 use crate::points::members::{AArm, InnerCV, Damper, TieRod, Wheel};
+use crate::units::Angle;
 
 #[derive(Debug)]
 pub struct FrontPoints {
@@ -13,15 +14,11 @@ pub struct FrontPoints {
 }
 
 impl FrontPoints {
-    pub fn caster(&self) -> f64 {
+    pub fn caster(&self) -> Angle {
         let castor_axis = Vec3d::new_from_to(
             &self.lower_wishbone.outer_ball_joint,
             &self.upper_wishbone.outer_ball_joint
         ).project_onto_plane(&Vec3d::j());
-        castor_axis.angle_to(&Vec3d::k())
-    }
-
-    pub fn track_width(&self) -> f64 {
-        self.wheel.center.y * 2.0
+        Angle::from_radians(castor_axis.angle_to(&Vec3d::k()))
     }
 }

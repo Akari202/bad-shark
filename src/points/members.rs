@@ -1,4 +1,5 @@
 use vec_utils::vec3d::Vec3d;
+use crate::units::{Angle, Distance};
 
 #[derive(Debug)]
 pub struct AArm {
@@ -19,8 +20,8 @@ pub struct HArm {
 pub struct Damper {
     pub body: Vec3d,
     pub wishbone: Vec3d,
-    pub max_length: f64,
-    pub min_length: f64
+    pub eye_to_eye: f64,
+    pub stroke: f64
 }
 
 #[derive(Debug)]
@@ -51,11 +52,25 @@ impl Link {
 }
 
 impl Wheel {
-    pub fn camber(&self) -> f64 {
+    pub fn camber(&self) -> Angle {
         let camber_axis = Vec3d::new_from_to(
             &self.spindle,
             &self.center
         ).project_onto_plane(&Vec3d::i());
-        camber_axis.angle_to(&Vec3d::j())
+        Angle::from_radians(camber_axis.angle_to(&Vec3d::j()))
+    }
+
+    pub fn track_width(&self) -> Distance {
+        Distance::from_millimeters(self.center.y * 2.0)
+    }
+}
+
+impl Damper {
+    pub fn length(&self) -> Distance {
+        Distance::from_millimeters(self.body.distance_to(&self.wishbone))
+    }
+
+    pub fn compression_distance(&self) -> Distance {
+        Distance::from_millimeters(self.eye_to_eye - self.length().value)
     }
 }
