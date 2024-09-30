@@ -1,5 +1,6 @@
+use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
-use crate::units::{Angle, Distance};
+use crate::units::Distance;
 
 #[derive(Debug)]
 pub struct AArm {
@@ -23,6 +24,7 @@ pub struct Damper {
     pub eye_to_eye: f64,
     pub stroke: f64
 }
+
 
 #[derive(Debug)]
 pub struct Link {
@@ -52,12 +54,12 @@ impl Link {
 }
 
 impl Wheel {
-    pub fn camber(&self) -> Angle {
+    pub fn camber(&self) -> AngleDegrees {
         let camber_axis = Vec3d::new_from_to(
             &self.spindle,
             &self.center
         ).project_onto_plane(&Vec3d::i());
-        Angle::from_radians(camber_axis.angle_to(&Vec3d::j()))
+        camber_axis.angle_to(&Vec3d::j()).into()
     }
 
     pub fn track_width(&self) -> Distance {
@@ -72,5 +74,19 @@ impl Damper {
 
     pub fn compression_distance(&self) -> Distance {
         Distance::from_millimeters(self.eye_to_eye - self.length().value)
+    }
+}
+
+impl AArm {
+    pub fn rotation_axis(&self) -> Vec3d {
+        Vec3d::new_from_to(&self.front_pivot, &self.rear_pivot)
+    }
+
+    // pub fn rotation_circle_radius(&self) -> f64 {
+    //     self.outer_ball_joint.distance_to_line(&self.front_pivot, &self.rear_pivot)
+    // }
+
+    pub fn center_of_rotation(&self) -> Vec3d {
+        self.outer_ball_joint.project_onto_line(&self.front_pivot, &self.rear_pivot)
     }
 }

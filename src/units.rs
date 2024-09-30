@@ -1,18 +1,6 @@
 use std::clone;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Angle {
-    pub value: f64,
-    pub unit: AngleUnit
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum AngleUnit {
-    Radians,
-    Degrees
-}
-
-#[derive(Debug, Clone, Copy)]
 pub struct Distance {
     pub value: f64,
     pub unit: DistanceUnit
@@ -27,34 +15,6 @@ pub enum DistanceUnit {
     Inches,
     Feet,
     Yards
-}
-
-impl Angle {
-    pub fn new(value: f64, unit: AngleUnit) -> Angle {
-        Angle { value, unit }
-    }
-
-    pub fn from_radians(value: f64) -> Angle {
-        Angle::new(value, AngleUnit::Radians)
-    }
-
-    pub fn from_degrees(value: f64) -> Angle {
-        Angle::new(value, AngleUnit::Degrees)
-    }
-
-    pub fn to_radians(&self) -> Angle {
-        match self.unit {
-            AngleUnit::Radians => self.clone(),
-            AngleUnit::Degrees => Angle::from_radians(self.value * std::f64::consts::PI / 180.0)
-        }
-    }
-
-    pub fn to_degrees(&self) -> Angle {
-        match self.unit {
-            AngleUnit::Radians => Angle::from_degrees(self.value * 180.0 / std::f64::consts::PI),
-            AngleUnit::Degrees => self.clone()
-        }
-    }
 }
 
 impl Distance {
@@ -175,19 +135,14 @@ impl Distance {
     }
 }
 
-impl std::fmt::Display for Angle {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:.3}°", self.to_degrees().value)
-        // match self.unit {
-        //     AngleUnit::Radians => write!(f, "{} rad", self.value),
-        //     AngleUnit::Degrees => write!(f, "{}°", self.value)
-        // }
-    }
-}
-
 impl std::fmt::Display for Distance {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:.3} in", self.to_inches().value)
+        if let Some(precision) = f.precision() {
+            write!(f, "{:.precision$} in", self.to_inches().value, precision = precision)
+        } else {
+            write!(f, "{} in", self.to_inches().value)
+        }
+        // write!(f, "{:.3} in", self.to_inches().value)
         // match self.unit {
         //     DistanceUnit::Meters => write!(f, "{} m", self.value),
         //     DistanceUnit::Millimeters => write!(f, "{} mm", self.value),

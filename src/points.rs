@@ -1,8 +1,9 @@
+use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
 use crate::points::front::FrontPoints;
 use crate::points::members::{AArm, InnerCV, Damper, HArm, Link, Wheel};
 use crate::points::rear::RearPoints;
-use crate::units::{Angle, Distance};
+use crate::units::Distance;
 
 pub mod front;
 pub mod rear;
@@ -26,7 +27,7 @@ impl CarPoints {
         )
     }
 
-    pub fn camber(&self) -> (Angle, Angle) {
+    pub fn camber(&self) -> (AngleDegrees, AngleDegrees) {
         (self.front.wheel.camber(), self.rear.wheel.camber())
     }
 }
