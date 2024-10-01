@@ -1,20 +1,18 @@
-use crate::test_car::TEST_CAR;
+use crate::test_car::get_test_front;
 
-mod points;
-mod test_car;
 mod units;
+mod car;
+mod test_car;
 
-// NOTE: Internally everything is in millimeters and radians, i want to move way from units.rs
+pub const ANGLE_EPSILON_DEGREES: f64 = 5.0;
 
 fn main() {
-    println!("Wheelbase: {:.3}", TEST_CAR.wheelbase());
-    println!("Caster angle: {:.3}", TEST_CAR.front.caster());
-    println!("Front and rear track width: {:.0}, {:.0}", TEST_CAR.track_width().0, TEST_CAR.track_width().1);
-    println!("Front camber angle: {:.3}", TEST_CAR.front.wheel.camber());
-    println!("Rear camber angle: {:.3}", TEST_CAR.rear.wheel.camber());
-    println!("Front shock compression: {:.3}", TEST_CAR.front.damper.compression_distance());
-    println!("Rear shock compression: {:.3}", TEST_CAR.rear.damper.compression_distance());
-    println!("Front upper wishbone angle at full droop: {:.3}", TEST_CAR.front.upper_wishbone_angle_from_damper_extension(0.8).expect("Error"));
+    let test_front = get_test_front();
+
+    // println!("Front Motion Ratios: {:?}", test_front.motion_ratios());
+    // println!("Front Caster Angle: {:.3}", test_front.caster_angle().to_degrees());
+    // println!("Front Upright Ball Joint Distance: {:.3}in", test_front.outer_upright_mounting_distance() / 25.4);
+    dbg!(test_front.rotate_upper_aarm());
 }
 
 
