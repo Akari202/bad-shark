@@ -79,4 +79,8 @@ impl Front {
             damper_body: self.damper_body
         })
     }
+
+    pub fn print_coordinates(&self) {
+
+    }
 }

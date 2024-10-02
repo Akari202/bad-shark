@@ -79,6 +79,20 @@ impl AArm {
         matrix3x3::mul(&rotation_matrix, vector)
     }
 
+    // returns (front, rear, outer, Option<damper>)
+    pub fn get_global(&self, datum: &Vec3d) -> (Vec3d, Vec3d, Vec3d, Option<Vec3d>) {
+        (
+            datum.clone(),
+            self.unrotate_from_internal(&(self.rear * Vec3d::i())) + datum,
+            self.unrotate_from_internal(&self.outer) + datum,
+            if self.damper.is_none() {
+                None
+            } else {
+                Some(self.unrotate_from_internal(&self.damper.unwrap()) + datum)
+            }
+        )
+    }
+
     pub fn rotate(&self, epsilon: AngleRadians) -> Self {
         let rotation_matrix = [
             [1.0, 0.0, 0.0],
