@@ -1,3 +1,4 @@
+use cgmath::num_traits::real::Real;
 use itertools::Itertools;
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
@@ -7,13 +8,14 @@ use vec_utils::geometry::intersection::sphere_circle;
 use crate::{Vertex, ANGLE_EPSILON_DEGREES};
 use crate::car::members::a_arm::AArm;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Front {
     pub upper_datum: Vec3d,
     pub upper: AArm,
     pub lower_datum: Vec3d,
     pub lower: AArm,
-    pub damper_body: Vec3d
+    pub damper_body: Vec3d,
+    pub upright_distance: f64
 }
 
 impl Front {
@@ -47,12 +49,13 @@ impl Front {
         self.outer_upright_mounting_vec_global().magnitude()
     }
 
-    pub fn rotate_upper_aarm(&self) -> Option<Self> {
-        let rotated_upper = self.upper.rotate(AngleDegrees::new(ANGLE_EPSILON_DEGREES).into());
+    pub fn rotate_upper_aarm(&self, angle: AngleDegrees) -> Option<Self> {
+        let rotated_upper = self.upper.rotate(angle.into());
+        // let rotated_lower = self.lower.rotate(angle.into());
         let upper_outer_g = rotated_upper.unrotate_from_internal(&rotated_upper.outer) + self.upper_datum;
         let upright_sphere_l = Sphere::new(
             &self.lower.rotate_to_internal(&(upper_outer_g - self.lower_datum)),
-            self.outer_upright_mounting_distance()
+            self.upright_distance
         );
         let aarm_rotation_center_l = self.lower.outer.x * Vec3d::i();
         let aarm_circle_l = Circle::new(
@@ -61,28 +64,32 @@ impl Front {
             &Vec3d::i()
         );
         let intersection_l = sphere_circle(&upright_sphere_l, &aarm_circle_l)?;
-        dbg!(self.lower);
-        dbg!(upright_sphere_l);
-        dbg!(aarm_circle_l);
-        dbg!(intersection_l);
-        // let angle = intersection_l.0
-        //     .project_onto_plane(&Vec3d::i())
-        //     .angle_to(&self.lower.outer.project_onto_plane(&Vec3d::i()));
-        let angle = intersection_l.1.angle_to(&self.lower.outer);
-        println!("Angle lower aarm moves: {:.3}", angle.to_degrees());
-        let rotated_lower = self.lower.rotate(angle);
-        // let rotated_lower = AArm {
-        //     angles: self.lower.angles,
-        //     rear: self.lower.rear,
-        //     outer: intersection_l.0,
-        //     damper: None,
-        // };
+        let lower_angle_1 = intersection_l.1
+            .project_onto_plane(&Vec3d::i())
+            .angle_to(
+                &self
+                    .lower
+                    .outer
+                    .project_onto_plane(&Vec3d::i())
+            );
+        let lower_angle_2 = intersection_l.0
+            .project_onto_plane(&Vec3d::i())
+            .angle_to(
+                &self
+                    .lower
+                    .outer
+                    .project_onto_plane(&Vec3d::i())
+            );
+        let lower_angle = lower_angle_1.min(lower_angle_2) * f64::from(angle.to_radians()).signum();
+        println!("Upper AArm angle change: {}, Lower AArm angle change: {}", angle, lower_angle.to_degrees());
+        let rotated_lower = self.lower.rotate(lower_angle);
         Some(Self {
             upper_datum: self.upper_datum,
             upper: rotated_upper,
             lower_datum: self.lower_datum,
             lower: rotated_lower,
-            damper_body: self.damper_body
+            damper_body: self.damper_body,
+            upright_distance: self.upright_distance
         })
     }
 
@@ -90,7 +97,7 @@ impl Front {
 
     }
 
-    pub fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
+    pub(crate) fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
         let upper = self.upper.get_global(&self.upper_datum);
         let lower = self.lower.get_global(&self.lower_datum);
         let vertex_data = vec![

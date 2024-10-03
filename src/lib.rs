@@ -1,6 +1,7 @@
+use std::io::ErrorKind::AddrNotAvailable;
 use std::iter;
-use itertools::concat;
-use vec_utils::angle::AngleRadians;
+use itertools::{concat, Itertools};
+use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -9,28 +10,17 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
-use crate::test_car::get_test_front;
+use crate::test_car::{get_test_car, get_test_front};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::car::front::Front;
 
 pub mod car;
 pub mod test_car;
+mod camera;
 
-pub const ANGLE_EPSILON_DEGREES: f64 = 5.0;
-
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [1.0, 1.0, 1.0] },
-    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [1.0, 1.0, 1.0] }
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4, 0
-];
+pub const ANGLE_EPSILON_DEGREES: f64 = 1.0;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -97,202 +87,6 @@ impl Vertex {
     }
 }
 
-struct Camera {
-    eye: cgmath::Point3<f32>,
-    target: cgmath::Point3<f32>,
-    up: cgmath::Vector3<f32>,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
-}
-
-impl Camera {
-    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        // 1.
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        // 2.
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
-
-        // 3.
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
-    }
-}
-
-// We need this for Rust to store our data correctly for the shaders
-#[repr(C)]
-// This is so we can store this in a buffer
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    // We can't use cgmath with bytemuck directly, so we'll have
-    // to convert the Matrix4 into a 4x4 f32 array
-    view_proj: [[f32; 4]; 4],
-}
-
-impl CameraUniform {
-    fn new() -> Self {
-        use cgmath::SquareMatrix;
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
-    }
-}
-
-struct Pressed {
-    pub zoom_in: bool,
-    pub zoom_out: bool,
-    pub orbit_right: bool,
-    pub orbit_left: bool,
-    pub orbit_down: bool,
-    pub orbit_up: bool,
-    pub pan_left: bool,
-    pub pan_right: bool,
-    pub pan_down: bool,
-    pub pan_up: bool
-}
-
-impl Pressed {
-    pub fn new() -> Self {
-        Self {
-            zoom_in: false,
-            zoom_out: false,
-            orbit_right: false,
-            orbit_left: false,
-            orbit_down: false,
-            orbit_up: false,
-            pan_left: false,
-            pan_right: false,
-            pan_down: false,
-            pan_up: false
-        }
-    }
-}
-
-struct CameraController {
-    speed: f32,
-    pressed: Pressed
-}
-
-impl CameraController {
-    fn new(speed: f32) -> Self {
-        Self {
-            speed,
-            pressed: Pressed::new()
-        }
-    }
-
-    fn process_events(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state,
-                        physical_key: PhysicalKey::Code(keycode),
-                        ..
-                    },
-                ..
-            } => {
-                let is_pressed = *state == ElementState::Pressed;
-                match keycode {
-                    KeyCode::Equal => {
-                        self.pressed.zoom_in = is_pressed;
-                        true
-                    }
-                    KeyCode::Minus => {
-                        self.pressed.zoom_out = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyA => {
-                        self.pressed.orbit_left = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyD => {
-                        self.pressed.orbit_right = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyW => {
-                        self.pressed.orbit_up = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyS => {
-                        self.pressed.orbit_down = is_pressed;
-                        true
-                    }
-                    KeyCode::ArrowUp => {
-                        self.pressed.pan_up = is_pressed;
-                        true
-                    }
-                    KeyCode::ArrowDown => {
-                        self.pressed.pan_down = is_pressed;
-                        true
-                    }
-                    KeyCode::ArrowLeft => {
-                        self.pressed.pan_left = is_pressed;
-                        true
-                    }
-                    KeyCode::ArrowRight => {
-                        self.pressed.pan_right = is_pressed;
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-
-    fn update_camera(&self, camera: &mut Camera) {
-        use cgmath::InnerSpace;
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalize();
-        let forward_mag = forward.magnitude();
-
-        // Prevents glitching when the camera gets too close to the
-        // center of the scene.
-        if self.pressed.zoom_in && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
-        }
-        if self.pressed.zoom_out {
-            camera.eye -= forward_norm * self.speed;
-        }
-
-        let right = forward_norm.cross(camera.up);
-
-        // Redo radius calc in case the forward/backward is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
-        // Rescale the distance between the target and the eye so
-        // that it doesn't change. The eye, therefore, still
-        // lies on the circle made by the target and eye.
-
-        if self.pressed.orbit_down {
-            camera.eye = camera.target - (forward + camera.up * self.speed).normalize() * forward_mag;
-        }
-        if self.pressed.orbit_up {
-            camera.eye = camera.target - (forward - camera.up * self.speed).normalize() * forward_mag;
-        }
-        if self.pressed.orbit_left {
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
-        }
-        if self.pressed.orbit_right {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
-        }
-
-        // if self.pressed.pan_down {
-        //     camera.target = camera.target - camera.up * self.speed;
-        // }
-
-        // if self.pressed.pan_up {
-        //     camera.target = camera.target + camera.up * self.speed;
-        // }
-    }
-}
-
 struct State<'a> {
     surface: wgpu::Surface<'a>,
     device: wgpu::Device,
@@ -308,7 +102,9 @@ struct State<'a> {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
-    window: &'a Window
+    window: &'a Window,
+    ride_car: Front,
+    moved_car: Front
 }
 
 impl<'a> State<'a> {
@@ -382,17 +178,14 @@ impl<'a> State<'a> {
         });
 
         let camera = Camera {
-            // position the camera 1 unit up and 2 units back
             // +z is out of the screen
             eye: (5.0, 5.0, 5.0).into(),
-            // have it look at the origin
             target: (0.0, 0.0, 0.0).into(),
-            // which way is "up"
             up: cgmath::Vector3::unit_z(),
             aspect: config.width as f32 / config.height as f32,
             fovy: 45.0,
             znear: 0.01,
-            zfar: 100.0,
+            zfar: 100.0
         };
 
         let mut camera_uniform = CameraUniform::new();
@@ -402,7 +195,7 @@ impl<'a> State<'a> {
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Buffer"),
                 contents: bytemuck::cast_slice(&[camera_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
             }
         );
 
@@ -496,10 +289,13 @@ impl<'a> State<'a> {
             cache: None,
         });
 
+        let ride_car = get_test_car();
+        let moved_car = get_test_car();
+
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
+                contents: &[],
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
@@ -507,13 +303,13 @@ impl<'a> State<'a> {
         let index_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
+                contents: &[],
+                usage: wgpu::BufferUsages::INDEX
             }
         );
 
         let camera_controller = CameraController::new(0.2);
-        let num_indices: u32 = INDICES.len() as u32;
+        let num_indices: u32 = 0;
 
         Self {
             surface,
@@ -530,7 +326,9 @@ impl<'a> State<'a> {
             camera_buffer,
             camera_bind_group,
             camera_controller,
-            window
+            window,
+            ride_car,
+            moved_car
         }
     }
 
@@ -549,6 +347,55 @@ impl<'a> State<'a> {
 
     #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                KeyEvent {
+                    state,
+                    physical_key: PhysicalKey::Code(keycode),
+                    ..
+                },
+                ..
+            } => {
+                let is_pressed = *state == ElementState::Pressed;
+                match keycode {
+                    KeyCode::BracketLeft => {
+                        let moved = self
+                            .moved_car
+                            .rotate_upper_aarm(
+                                AngleDegrees::new(-1.0 * ANGLE_EPSILON_DEGREES)
+                            );
+                        if moved.is_none() {
+                            return true;
+                        }
+                        self.moved_car = moved.unwrap();
+                        self.write_buffers();
+                        return true;
+                    }
+                    KeyCode::BracketRight => {
+                        let moved = self
+                            .moved_car
+                            .rotate_upper_aarm(
+                                AngleDegrees::new(ANGLE_EPSILON_DEGREES)
+                            );
+                        if moved.is_none() {
+                            return true;
+                        }
+                        self.moved_car = moved.unwrap();
+                        self.write_buffers();
+                        return true;
+                    }
+                    KeyCode::KeyI => {
+                        self.moved_car = self.ride_car;
+                        self.write_buffers();
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+
         self.camera_controller.process_events(event)
     }
 
@@ -607,20 +454,17 @@ impl<'a> State<'a> {
     }
 
     fn write_buffers(&mut self) {
-        let ride_front = get_test_front();
+        let mut buffers: Vec<(Vec<Vertex>, Vec<u16>)> = Vec::new();
 
         let color = [0.3; 3];
-        let ride = ride_front.get_vertex_data(color);
+        buffers.push(self.ride_car.get_vertex_data(color));
 
-        let moved_front = ride_front.rotate_upper_aarm().unwrap();
         let color = [1.0; 3];
-        let moved = moved_front.get_vertex_data(color);
+        buffers.push(self.moved_car.get_vertex_data(color));
 
-        let axis = Self::coordinate_axis();
+        buffers.push(Self::coordinate_axis());
 
-        self.update_buffers(&vec![
-            ride, moved, axis
-        ]);
+        self.update_buffers(&buffers);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
