@@ -66,6 +66,13 @@ impl Vertex {
         }
     }
 
+    pub fn mirror(&self) -> Self {
+        Self {
+            position: [self.position[0], self.position[1] * -1.0, self.position[2]],
+            color: self.color
+        }
+    }
+
     // pub fn from_vec3ds(vectors: &[&Vec3d], color: [f32; 3]) -> Vec<Self> {
     //     vectors.iter().map(|i| {Self::from_vec3d(i, color)}).collect()
     // }
@@ -551,73 +558,24 @@ impl<'a> State<'a> {
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
 
-    fn write_buffers(&mut self) {
-        let test_front = get_test_front();
-        let color = [0.4; 3];
-        let upper = test_front.upper.get_global(&test_front.upper_datum);
-        let lower = test_front.lower.get_global(&test_front.lower_datum);
-        let ride_vertex_data = vec![
-            upper.0, upper.1, upper.2, upper.3.unwrap(), test_front.damper_body, lower.0, lower.1, lower.2
-        ];
-        let ride_vertex_data: Vec<Vertex> = ride_vertex_data.iter().map(|i| {
-            Vertex::from_vec3d(i, color).scale(500.0)
-        }).collect();
-        let ride_index_data: Vec<u16> = vec![
-            0, 2, 1, 2, 3, 4, 5, 7, 6, 7
-        ];
+    fn update_buffers(&mut self, data: &Vec<(Vec<Vertex>, Vec<u16>)>) {
+        let mut vertex_data: Vec<Vertex> = Vec::new();
+        let mut index_data: Vec<u16> = Vec::new();
+        let mut start: u16 = 0;
 
-        let test_front = test_front.rotate_upper_aarm().unwrap();
-        let color = [1.0; 3];
-        let upper = test_front.upper.get_global(&test_front.upper_datum);
-        let lower = test_front.lower.get_global(&test_front.lower_datum);
-        let moved_vertex_data = vec![
-            upper.0, upper.1, upper.2, upper.3.unwrap(), test_front.damper_body, lower.0, lower.1, lower.2
-        ];
-        let moved_vertex_data: Vec<Vertex> = moved_vertex_data.iter().map(|i| {
-            Vertex::from_vec3d(i, color).scale(500.0)
-        }).collect();
-        let moved_index_data: Vec<u16> = vec![
-            0, 2, 1, 2, 3, 4, 5, 7, 6, 7
-        ];
+        for (i, j) in data {
+            vertex_data = [vertex_data, i.clone()].concat();
+            index_data = [
+                index_data,
+                j.iter().map(|i| {
+                    *i + start
+                }).collect()
+            ].concat();
+            start = vertex_data.len() as u16;
+        }
 
-        let start = ride_vertex_data.len() as u16;
-        let vertex_data = vec![ride_vertex_data, moved_vertex_data].concat();
-        let index_data = vec![
-            ride_index_data,
-            moved_index_data.iter().map(|i| {i + start}).collect::<Vec<u16>>()
-        ].concat();
-        let start = vertex_data.len() as u16;
-        let index_data = vec![
-            index_data.clone(),
-            index_data.iter().map(|i| {i + start}).collect::<Vec<u16>>()
-        ].concat();
-        let vertex_data = vec![
-            vertex_data.clone(),
-            vertex_data.iter().map(|i| {
-                Vertex {
-                    position: [
-                        i.position[0],
-                        -1.0 * i.position[1],
-                        i.position[2]
-                    ],
-                    color: i.color,
-                }
-            }).collect::<Vec<_>>()
-        ].concat();
-        // let index_data = index_data.as_slice();
-        // let vertex_data = vertex_data.as_slice();
-
-        let vertex_data = vec![vertex_data, vec![
-            Vertex::from_vec3d(&Vec3d::zero(), [0.8; 3]),
-            Vertex::from_vec3d(&Vec3d::i(), [1.0, 0.2, 0.2]),
-            Vertex::from_vec3d(&Vec3d::j(), [0.2, 1.0, 0.2]),
-            Vertex::from_vec3d(&Vec3d::k(), [0.2, 0.2, 1.0])
-        ]].concat();
-        let start = (vertex_data.len() - 4) as u16;
-        let index_data: Vec<u16> = vec![index_data, vec![
-            start, start + 1, start, start + 2, start, start + 3
-        ]].concat();
-
+        self.num_indices = index_data.len() as u32;
+        println!("{} Indices, {} Vertexs", self.num_indices, vertex_data.len());
         self.vertex_buffer = self.device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -632,10 +590,37 @@ impl<'a> State<'a> {
                 usage: wgpu::BufferUsages::INDEX,
             }
         );
-        self.num_indices = index_data.len() as u32;
-        // println!("{}", self.num_indices);
-        // println!("{:?}", index_data);
-        // println!("{:?}", vertex_data.iter().map(|i| {i.position}).collect::<Vec<_>>());
+    }
+
+    fn coordinate_axis() -> (Vec<Vertex>, Vec<u16>) {
+        (
+            vec![
+                Vertex::from_vec3d(&Vec3d::zero(), [0.5; 3]),
+                Vertex::from_vec3d(&Vec3d::i(), [1.0, 0.2, 0.2]),
+                Vertex::from_vec3d(&Vec3d::j(), [0.2, 1.0, 0.2]),
+                Vertex::from_vec3d(&Vec3d::k(), [0.2, 0.2, 1.0])
+            ],
+            vec![
+                0, 1, 0, 2, 0, 3
+            ]
+        )
+    }
+
+    fn write_buffers(&mut self) {
+        let ride_front = get_test_front();
+
+        let color = [0.3; 3];
+        let ride = ride_front.get_vertex_data(color);
+
+        let moved_front = ride_front.rotate_upper_aarm().unwrap();
+        let color = [1.0; 3];
+        let moved = moved_front.get_vertex_data(color);
+
+        let axis = Self::coordinate_axis();
+
+        self.update_buffers(&vec![
+            ride, moved, axis
+        ]);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

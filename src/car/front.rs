@@ -4,7 +4,7 @@ use vec_utils::vec3d::Vec3d;
 use vec_utils::geometry::sphere::Sphere;
 use vec_utils::geometry::circle::Circle;
 use vec_utils::geometry::intersection::sphere_circle;
-use crate::ANGLE_EPSILON_DEGREES;
+use crate::{Vertex, ANGLE_EPSILON_DEGREES};
 use crate::car::members::a_arm::AArm;
 
 #[derive(Debug)]
@@ -61,16 +61,22 @@ impl Front {
             &Vec3d::i()
         );
         let intersection_l = sphere_circle(&upright_sphere_l, &aarm_circle_l)?;
-        // dbg!(self.lower);
-        // dbg!(upright_sphere_l);
-        // dbg!(aarm_circle_l);
-        // dbg!(intersection_l);
-        let angle = intersection_l.0
-            .project_onto_plane(&Vec3d::i())
-            .angle_to(&self.lower.outer.project_onto_plane(&Vec3d::i()));
-        dbg!(angle);
-        // println!("Angle lower aarm moves: {:.3}", angle);
+        dbg!(self.lower);
+        dbg!(upright_sphere_l);
+        dbg!(aarm_circle_l);
+        dbg!(intersection_l);
+        // let angle = intersection_l.0
+        //     .project_onto_plane(&Vec3d::i())
+        //     .angle_to(&self.lower.outer.project_onto_plane(&Vec3d::i()));
+        let angle = intersection_l.1.angle_to(&self.lower.outer);
+        println!("Angle lower aarm moves: {:.3}", angle.to_degrees());
         let rotated_lower = self.lower.rotate(angle);
+        // let rotated_lower = AArm {
+        //     angles: self.lower.angles,
+        //     rear: self.lower.rear,
+        //     outer: intersection_l.0,
+        //     damper: None,
+        // };
         Some(Self {
             upper_datum: self.upper_datum,
             upper: rotated_upper,
@@ -82,5 +88,28 @@ impl Front {
 
     pub fn print_coordinates(&self) {
 
+    }
+
+    pub fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
+        let upper = self.upper.get_global(&self.upper_datum);
+        let lower = self.lower.get_global(&self.lower_datum);
+        let vertex_data = vec![
+            upper.0, upper.1, upper.2, lower.0, lower.1, lower.2, upper.3.unwrap(), self.damper_body
+        ];
+
+        (
+            vertex_data.iter().map(|i| {
+                let scaled = Vertex::from_vec3d(i, color).scale(500.0);
+                vec![
+                    scaled.mirror(),
+                    scaled
+                ]
+            }).concat(),
+            vec![
+                0, 4, 2, 4, 6, 10, 8, 10, 12, 14,
+                1, 5, 3, 5, 7, 11, 9, 11, 13, 15
+                // 0, 2, 1, 2, 3, 5, 4, 5, 6, 7
+            ]
+        )
     }
 }
