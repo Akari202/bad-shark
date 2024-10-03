@@ -2,7 +2,7 @@ use vec_utils::angle::AngleRadians;
 use vec_utils::matrix::matrix3x3;
 use vec_utils::vec3d::Vec3d;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct AArm {
     // pub front: Vec3d,
     // pub rear: Vec3d,

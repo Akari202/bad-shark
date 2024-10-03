@@ -10,14 +10,13 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
-use crate::test_car::{get_test_car, get_test_front};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 use crate::camera::{Camera, CameraController, CameraUniform};
-use crate::car::front::Front;
+use crate::car::Car;
+use crate::car::test_car::get_test_car;
 
 pub mod car;
-pub mod test_car;
 mod camera;
 
 pub const ANGLE_EPSILON_DEGREES: f64 = 1.0;
@@ -103,8 +102,8 @@ struct State<'a> {
     camera_bind_group: wgpu::BindGroup,
     camera_controller: CameraController,
     window: &'a Window,
-    ride_car: Front,
-    moved_car: Front
+    ride_car: Car,
+    moved_car: Car
 }
 
 impl<'a> State<'a> {
@@ -360,28 +359,16 @@ impl<'a> State<'a> {
                 let is_pressed = *state == ElementState::Pressed;
                 match keycode {
                     KeyCode::BracketLeft => {
-                        let moved = self
-                            .moved_car
-                            .rotate_upper_aarm(
-                                AngleDegrees::new(-1.0 * ANGLE_EPSILON_DEGREES)
-                            );
-                        if moved.is_none() {
-                            return true;
-                        }
-                        self.moved_car = moved.unwrap();
+                        let _ = self.moved_car.rotate_front(
+                            AngleDegrees::new(-1.0 * ANGLE_EPSILON_DEGREES)
+                        );
                         self.write_buffers();
                         return true;
                     }
                     KeyCode::BracketRight => {
-                        let moved = self
-                            .moved_car
-                            .rotate_upper_aarm(
-                                AngleDegrees::new(ANGLE_EPSILON_DEGREES)
-                            );
-                        if moved.is_none() {
-                            return true;
-                        }
-                        self.moved_car = moved.unwrap();
+                        let _ = self.moved_car.rotate_front(
+                            AngleDegrees::new(ANGLE_EPSILON_DEGREES)
+                        );
                         self.write_buffers();
                         return true;
                     }
@@ -457,10 +444,10 @@ impl<'a> State<'a> {
         let mut buffers: Vec<(Vec<Vertex>, Vec<u16>)> = Vec::new();
 
         let color = [0.3; 3];
-        buffers.push(self.ride_car.get_vertex_data(color));
+        buffers = [buffers, self.ride_car.get_vertex_data(color)].concat();
 
         let color = [1.0; 3];
-        buffers.push(self.moved_car.get_vertex_data(color));
+        buffers = [buffers, self.moved_car.get_vertex_data(color)].concat();
 
         buffers.push(Self::coordinate_axis());
 

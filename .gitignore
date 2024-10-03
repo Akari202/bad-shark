@@ -4,4 +4,4 @@
 .env
 *.xlsx
 info
-src/test_car*
+**test_car*

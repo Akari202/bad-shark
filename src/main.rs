@@ -1,6 +1,4 @@
 use bad_shark::run;
-use bad_shark::test_car::get_test_front;
-
 
 fn main() {
     // println!("Front Motion Ratios: {:?}", test_front.motion_ratios());
