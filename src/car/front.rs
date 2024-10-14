@@ -1,6 +1,7 @@
 use std::error::Error;
 use cgmath::num_traits::real::Real;
 use itertools::Itertools;
+use log::info;
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
 use vec_utils::geometry::sphere::Sphere;

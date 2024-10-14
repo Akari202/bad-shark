@@ -3,7 +3,7 @@ use itertools::Itertools;
 use vec_utils::angle::AngleDegrees;
 use crate::car::front::Front;
 use crate::car::rear::Rear;
-use crate::Vertex;
+use crate::graphics::vertex::Vertex;
 
 mod members;
 mod front;
@@ -24,13 +24,19 @@ impl Car {
             self.rear.get_vertex_data(color)
         ]
     }
+    
+    pub fn rotate(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
+        self.rotate_front(angle)?;
+        self.rotate_rear(angle)?;
+        Ok(())
+    }
 
-    pub fn rotate_front(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
+    fn rotate_front(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
         self.front.rotate_upper_aarm(angle)?;
         Ok(())
     }
 
-    pub fn rotate_rear(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
+    fn rotate_rear(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
         self.rear.rotate_harm(angle)?;
         Ok(())
     }

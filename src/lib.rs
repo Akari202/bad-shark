@@ -1,6 +1,7 @@
 use std::io::ErrorKind::AddrNotAvailable;
 use std::iter;
 use itertools::{concat, Itertools};
+use log::info;
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
 use wgpu::util::DeviceExt;
@@ -12,14 +13,17 @@ use winit::{
 };
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::graphics::camera::{Camera, CameraController, CameraUniform};
 use crate::car::Car;
 use crate::car::test_car::get_test_car;
+use crate::graphics::color::{coordinate_axis, BLACK, BLUE, DARK_GRAY, GREEN, MIDDLE, RED, WHITE};
+use crate::graphics::input::InputHandler;
+use crate::graphics::vertex::Vertex;
 
 pub mod car;
-mod camera;
+pub(crate) mod graphics;
 
-pub const ANGLE_EPSILON_DEGREES: f64 = 1.0;
+pub const ANGLE_EPSILON_DEGREES: f64 = 0.1;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -28,63 +32,6 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 0.5,
     0.0, 0.0, 0.0, 1.0,
 );
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3]
-}
-
-impl Vertex {
-    pub fn from_vec3d(vector: &Vec3d, color: [f32; 3]) -> Self {
-        Self {
-            position: [
-                vector.x as f32,
-                vector.y as f32,
-                vector.z as f32
-            ],
-            color
-        }
-    }
-
-    pub fn scale(&self, scale: f32) -> Self {
-        Self {
-            position: [self.position[0] / scale, self.position[1] / scale, self.position[2] / scale],
-            color: self.color
-        }
-    }
-
-    pub fn mirror(&self) -> Self {
-        Self {
-            position: [self.position[0], self.position[1] * -1.0, self.position[2]],
-            color: self.color
-        }
-    }
-
-    // pub fn from_vec3ds(vectors: &[&Vec3d], color: [f32; 3]) -> Vec<Self> {
-    //     vectors.iter().map(|i| {Self::from_vec3d(i, color)}).collect()
-    // }
-
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                }
-            ]
-        }
-    }
-}
 
 struct State<'a> {
     surface: wgpu::Surface<'a>,
@@ -103,7 +50,8 @@ struct State<'a> {
     camera_controller: CameraController,
     window: &'a Window,
     ride_car: Car,
-    moved_car: Car
+    moved_car: Car,
+    input_handler: InputHandler
 }
 
 impl<'a> State<'a> {
@@ -307,8 +255,10 @@ impl<'a> State<'a> {
             }
         );
 
-        let camera_controller = CameraController::new(0.2);
+        let camera_controller = CameraController::new(0.025);
         let num_indices: u32 = 0;
+        
+        let input_handler = InputHandler::new();
 
         Self {
             surface,
@@ -327,7 +277,8 @@ impl<'a> State<'a> {
             camera_controller,
             window,
             ride_car,
-            moved_car
+            moved_car,
+            input_handler
         }
     }
 
@@ -346,48 +297,19 @@ impl<'a> State<'a> {
 
     #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                KeyEvent {
-                    state,
-                    physical_key: PhysicalKey::Code(keycode),
-                    ..
-                },
-                ..
-            } => {
-                let is_pressed = *state == ElementState::Pressed;
-                match keycode {
-                    KeyCode::BracketLeft => {
-                        let _ = self.moved_car.rotate_front(
-                            AngleDegrees::new(-1.0 * ANGLE_EPSILON_DEGREES)
-                        );
-                        self.write_buffers();
-                        return true;
-                    }
-                    KeyCode::BracketRight => {
-                        let _ = self.moved_car.rotate_front(
-                            AngleDegrees::new(ANGLE_EPSILON_DEGREES)
-                        );
-                        self.write_buffers();
-                        return true;
-                    }
-                    KeyCode::KeyI => {
-                        self.moved_car = self.ride_car;
-                        self.write_buffers();
-                        return true;
-                    }
-                    _ => {}
-                }
-            }
-            _ => {}
-        }
-
-        self.camera_controller.process_events(event)
+        self.input_handler.process_events(event) || 
+            self.camera_controller.process_events(event)
     }
 
     fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
+        let update_car = self.input_handler.update_car(&self.ride_car, &mut self.moved_car);
+        if update_car.0 {
+            if update_car.1 {
+                self.moved_car = self.ride_car;
+            }
+            self.write_buffers();
+        }
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
@@ -426,30 +348,14 @@ impl<'a> State<'a> {
         );
     }
 
-    fn coordinate_axis() -> (Vec<Vertex>, Vec<u16>) {
-        (
-            vec![
-                Vertex::from_vec3d(&Vec3d::zero(), [0.5; 3]),
-                Vertex::from_vec3d(&Vec3d::i(), [1.0, 0.2, 0.2]),
-                Vertex::from_vec3d(&Vec3d::j(), [0.2, 1.0, 0.2]),
-                Vertex::from_vec3d(&Vec3d::k(), [0.2, 0.2, 1.0])
-            ],
-            vec![
-                0, 1, 0, 2, 0, 3
-            ]
-        )
-    }
-
     fn write_buffers(&mut self) {
         let mut buffers: Vec<(Vec<Vertex>, Vec<u16>)> = Vec::new();
 
-        let color = [0.3; 3];
-        buffers = [buffers, self.ride_car.get_vertex_data(color)].concat();
+        buffers = [buffers, self.ride_car.get_vertex_data(DARK_GRAY)].concat();
 
-        let color = [1.0; 3];
-        buffers = [buffers, self.moved_car.get_vertex_data(color)].concat();
+        buffers = [buffers, self.moved_car.get_vertex_data(WHITE)].concat();
 
-        buffers.push(Self::coordinate_axis());
+        buffers.push(coordinate_axis());
 
         self.update_buffers(&buffers);
     }
@@ -596,6 +502,7 @@ pub async fn run() {
                 }
                 _ => {}
             }
+            
         })
         .unwrap();
 }

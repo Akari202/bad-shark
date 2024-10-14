@@ -6,10 +6,11 @@ use vec_utils::vec3d::Vec3d;
 use vec_utils::geometry::sphere::Sphere;
 use vec_utils::geometry::circle::Circle;
 use vec_utils::geometry::intersection::sphere_circle;
-use crate::{Vertex, ANGLE_EPSILON_DEGREES};
+use crate::ANGLE_EPSILON_DEGREES;
 use crate::car::front::Front;
 use crate::car::members::h_arm::HArm;
 use crate::car::members::link::Link;
+use crate::graphics::vertex::Vertex;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Rear {
@@ -47,6 +48,7 @@ impl Rear {
     // }
 
     pub fn rotate_harm(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
+        self.harm = self.harm.rotate(angle.into());
         Ok(())
     }
 
