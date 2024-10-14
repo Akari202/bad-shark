@@ -113,46 +113,5 @@ impl Front {
                 1, 5, 3, 5, 7, 11, 9, 11, 13, 15
             ]
         )
-            .angle_to(
-                &self
-                    .lower
-                    .outer
-                    .project_onto_plane(&Vec3d::i())
-            );
-        let lower_angle_2 = intersection_l.0
-            .project_onto_plane(&Vec3d::i())
-            .angle_to(
-                &self
-                    .lower
-                    .outer
-                    .project_onto_plane(&Vec3d::i())
-            );
-        let lower_angle = lower_angle_1.min(lower_angle_2) * f64::from(angle.to_radians()).signum();
-        println!("Upper AArm angle change: {}, Lower AArm angle change: {}", angle, lower_angle.to_degrees());
-        self.upper = rotated_upper;
-        self.lower = self.lower.rotate(lower_angle);
-        Ok(())
-    }
-
-    pub(crate) fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
-        let upper = self.upper.get_global(&self.upper_datum);
-        let lower = self.lower.get_global(&self.lower_datum);
-        let vertex_data = vec![
-            upper.0, upper.1, upper.2, lower.0, lower.1, lower.2, upper.3.unwrap(), self.damper_body
-        ];
-
-        (
-            vertex_data.iter().map(|i| {
-                let scaled = Vertex::from_vec3d(i, color).scale(500.0);
-                vec![
-                    scaled.mirror(),
-                    scaled
-                ]
-            }).concat(),
-            vec![
-                0, 4, 2, 4, 6, 10, 8, 10, 12, 14,
-                1, 5, 3, 5, 7, 11, 9, 11, 13, 15
-            ]
-        )
     }
 }
