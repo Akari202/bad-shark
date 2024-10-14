@@ -2,16 +2,19 @@ use std::error::Error;
 use itertools::Itertools;
 use vec_utils::angle::AngleDegrees;
 use crate::car::front::Front;
+use crate::car::rear::Rear;
 use crate::Vertex;
 
 mod members;
 mod front;
 mod wheel;
 pub(crate) mod test_car;
+mod rear;
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Car {
-    front: Front
+    front: Front,
+    rear: Rear
 }
 
 impl Car {
