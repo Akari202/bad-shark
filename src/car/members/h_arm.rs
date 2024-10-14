@@ -2,6 +2,8 @@ use vec_utils::angle::AngleRadians;
 use vec_utils::matrix::matrix3x3;
 use vec_utils::vec3d::Vec3d;
 use crate::car::members::a_arm::AArm;
+use crate::car::members::link::Link;
+use crate::car::members::Member;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HArm {
@@ -45,46 +47,14 @@ impl HArm {
         Self::new(Vec3d::new(xy_angle.into(), 0.0, zx_angle.into()), rear.magnitude(), outer_front, outer_rear, damper)
     }
 
-    // NOTE: This only applies the internal rotation to internal aarm coordinate
-    pub fn rotate_to_internal(&self, vector: &Vec3d) -> Vec3d {
-        // yaw
-        let xy_angle = AngleRadians::new(self.angles.x);
-        // pitch
-        let yz_angle = AngleRadians::new(0.0);
-        // roll
-        let zx_angle = AngleRadians::new(self.angles.z);
-        let rotation_matrix = [
-            [xy_angle.cos() * yz_angle.cos(), xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(), xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()],
-            [xy_angle.cos() * yz_angle.sin(), xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(), xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()],
-            [-1.0 * yz_angle.sin(), xy_angle.sin() * yz_angle.cos(), xy_angle.cos() * yz_angle.cos()]
-        ];
-        matrix3x3::mul(&rotation_matrix, vector)
-    }
-
-    // NOTE: Only undoes the transformation to internal coordinates
-    pub fn unrotate_from_internal(&self, vector: &Vec3d) -> Vec3d {
-        // yaw
-        let xy_angle = AngleRadians::new(-1.0 * self.angles.x);
-        // pitch
-        let yz_angle = AngleRadians::new(0.0);
-        // roll
-        let zx_angle = AngleRadians::new(-1.0 * self.angles.z);
-        let rotation_matrix = [
-            [xy_angle.cos() * yz_angle.cos(), xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(), xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()],
-            [xy_angle.cos() * yz_angle.sin(), xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(), xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()],
-            [-1.0 * yz_angle.sin(), xy_angle.sin() * yz_angle.cos(), xy_angle.cos() * yz_angle.cos()]
-        ];
-        matrix3x3::mul(&rotation_matrix, vector)
-    }
-
     // returns (front, rear, outer_front, outer_rear, damper)
     pub fn get_global(&self, datum: &Vec3d) -> (Vec3d, Vec3d, Vec3d, Vec3d, Vec3d) {
         (
             datum.clone(),
-            self.unrotate_from_internal(&(self.rear * Vec3d::i())) + datum,
-            self.unrotate_from_internal(&self.outer_front) + datum,
-            self.unrotate_from_internal(&self.outer_rear) + datum,
-            self.unrotate_from_internal(&self.damper) + datum
+            self.rotate_from_internal(&(self.rear * Vec3d::i())) + datum,
+            self.rotate_from_internal(&self.outer_front) + datum,
+            self.rotate_from_internal(&self.outer_rear) + datum,
+            self.rotate_from_internal(&self.damper) + datum
         )
     }
 
@@ -104,5 +74,11 @@ impl HArm {
             outer_rear,
             damper
         }
+    }
+}
+
+impl Member for HArm {
+    fn angles(&self) -> Vec3d {
+        self.angles
     }
 }
