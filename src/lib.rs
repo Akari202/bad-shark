@@ -1,9 +1,17 @@
+use crate::car::Car;
+use crate::car::test_car::get_test_car;
+use crate::graphics::camera::{Camera, CameraController, CameraUniform};
+use crate::graphics::color::{BLACK, BLUE, DARK_GRAY, GREEN, MIDDLE, RED, WHITE, coordinate_axis};
+use crate::graphics::input::InputHandler;
+use crate::graphics::vertex::Vertex;
+use itertools::{Itertools, concat};
+use log::info;
 use std::io::ErrorKind::AddrNotAvailable;
 use std::iter;
-use itertools::{concat, Itertools};
-use log::info;
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
 use wgpu::util::DeviceExt;
 use winit::{
     event::*,
@@ -11,17 +19,11 @@ use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::{Window, WindowBuilder},
 };
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-use crate::graphics::camera::{Camera, CameraController, CameraUniform};
-use crate::car::Car;
-use crate::car::test_car::get_test_car;
-use crate::graphics::color::{coordinate_axis, BLACK, BLUE, DARK_GRAY, GREEN, MIDDLE, RED, WHITE};
-use crate::graphics::input::InputHandler;
-use crate::graphics::vertex::Vertex;
 
+mod app;
 pub mod car;
 pub(crate) mod graphics;
+pub use app::BSApp;
 
 pub const ANGLE_EPSILON_DEGREES: f64 = 0.1;
 
@@ -51,7 +53,7 @@ struct State<'a> {
     window: &'a Window,
     ride_car: Car,
     moved_car: Car,
-    input_handler: InputHandler
+    input_handler: InputHandler,
 }
 
 impl<'a> State<'a> {
@@ -100,7 +102,7 @@ impl<'a> State<'a> {
 
         let surface_caps = surface.get_capabilities(&adapter);
         // Shader code in this tutorial assumes an Srgb surface texture. Using a different
-        // one will result all the colors comming out darker. If you want to support non
+        // one will result all the colors coming out darker. If you want to support non
         // Srgb surfaces, you'll need to account for that when drawing to the frame.
         let surface_format = surface_caps
             .formats
@@ -132,24 +134,21 @@ impl<'a> State<'a> {
             aspect: config.width as f32 / config.height as f32,
             fovy: 45.0,
             znear: 0.01,
-            zfar: 100.0
+            zfar: 100.0,
         };
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        let camera_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[camera_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
-            }
-        );
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
-        let camera_bind_group_layout = device.create_bind_group_layout(
-            &wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -158,31 +157,25 @@ impl<'a> State<'a> {
                         min_binding_size: None,
                     },
                     count: None,
-                }
-            ],
-            label: Some("camera_bind_group_layout"),
-        });
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
             label: Some("camera_bind_group"),
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    &camera_bind_group_layout
-                ],
+                bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
-            }
-        );
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -190,11 +183,8 @@ impl<'a> State<'a> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[
-                    Vertex::desc()
-                ],
+                buffers: &[Vertex::desc()],
                 compilation_options: Default::default(),
-
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -239,25 +229,21 @@ impl<'a> State<'a> {
         let ride_car = get_test_car();
         let moved_car = get_test_car();
 
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: &[],
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: &[],
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: &[],
-                usage: wgpu::BufferUsages::INDEX
-            }
-        );
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: &[],
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
         let camera_controller = CameraController::new(0.025);
         let num_indices: u32 = 0;
-        
+
         let input_handler = InputHandler::new();
 
         Self {
@@ -278,7 +264,7 @@ impl<'a> State<'a> {
             window,
             ride_car,
             moved_car,
-            input_handler
+            input_handler,
         }
     }
 
@@ -297,13 +283,14 @@ impl<'a> State<'a> {
 
     #[allow(unused_variables)]
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.input_handler.process_events(event) || 
-            self.camera_controller.process_events(event)
+        self.input_handler.process_events(event) || self.camera_controller.process_events(event)
     }
 
     fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
-        let update_car = self.input_handler.update_car(&self.ride_car, &mut self.moved_car);
+        let update_car = self
+            .input_handler
+            .update_car(&self.ride_car, &mut self.moved_car);
         if update_car.0 {
             if update_car.1 {
                 self.moved_car = self.ride_car;
@@ -311,7 +298,11 @@ impl<'a> State<'a> {
             self.write_buffers();
         }
         self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
     }
 
     fn update_buffers(&mut self, data: &Vec<(Vec<Vertex>, Vec<u16>)>) {
@@ -321,31 +312,30 @@ impl<'a> State<'a> {
 
         for (i, j) in data {
             vertex_data = [vertex_data, i.clone()].concat();
-            index_data = [
-                index_data,
-                j.iter().map(|i| {
-                    *i + start
-                }).collect()
-            ].concat();
+            index_data = [index_data, j.iter().map(|i| *i + start).collect()].concat();
             start = vertex_data.len() as u16;
         }
 
         self.num_indices = index_data.len() as u32;
-        println!("{} Indices, {} Vertexs", self.num_indices, vertex_data.len());
-        self.vertex_buffer = self.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+        println!(
+            "{} Indices, {} Vertexs",
+            self.num_indices,
+            vertex_data.len()
+        );
+        self.vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
                 contents: bytemuck::cast_slice(&*vertex_data),
                 usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-        self.index_buffer = self.device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
+            });
+        self.index_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Index Buffer"),
                 contents: bytemuck::cast_slice(&*index_data),
                 usage: wgpu::BufferUsages::INDEX,
-            }
-        );
+            });
     }
 
     fn write_buffers(&mut self) {
@@ -412,7 +402,7 @@ pub async fn run() {
     cfg_if::cfg_if! {
         if #[cfg(target_arch = "wasm32")] {
             std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn).expect("Could't initialize logger");
+            console_log::init_with_level(log::Level::Warn).expect("Couldn't initialize logger");
         } else {
             env_logger::init();
         }
@@ -502,7 +492,6 @@ pub async fn run() {
                 }
                 _ => {}
             }
-            
         })
         .unwrap();
 }

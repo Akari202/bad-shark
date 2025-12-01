@@ -1,9 +1,10 @@
 use vec_utils::angle::AngleRadians;
 use vec_utils::matrix::matrix3x3;
 use vec_utils::vec3d::Vec3d;
+
 use crate::car::members::Member;
 
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Link {
     pub angles: Vec3d,
     pub outer: Vec3d
@@ -11,10 +12,7 @@ pub struct Link {
 
 impl Link {
     pub fn new(angles: Vec3d, outer: Vec3d) -> Self {
-        Self {
-            angles,
-            outer
-        }
+        Self { angles, outer }
     }
 
     pub fn from_global(inner: Vec3d, outer: Vec3d) -> Self {
@@ -27,9 +25,21 @@ impl Link {
         let zx_angle = Vec3d::i().angle_to(&outer.project_onto_plane(&Vec3d::j()));
 
         let rotation_matrix = [
-            [xy_angle.cos() * yz_angle.cos(), xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(), xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()],
-            [xy_angle.cos() * yz_angle.sin(), xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(), xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()],
-            [-1.0 * yz_angle.sin(), xy_angle.sin() * yz_angle.cos(), xy_angle.cos() * yz_angle.cos()]
+            [
+                xy_angle.cos() * yz_angle.cos(),
+                xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(),
+                xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()
+            ],
+            [
+                xy_angle.cos() * yz_angle.sin(),
+                xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(),
+                xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()
+            ],
+            [
+                -1.0 * yz_angle.sin(),
+                xy_angle.sin() * yz_angle.cos(),
+                xy_angle.cos() * yz_angle.cos()
+            ]
         ];
 
         let outer = matrix3x3::mul(&rotation_matrix, &outer);
@@ -37,10 +47,7 @@ impl Link {
     }
 
     pub fn get_global(&self, datum: &Vec3d) -> (Vec3d, Vec3d) {
-        (
-            *datum,
-            self.rotate_from_internal(&self.outer) + datum
-        )
+        (*datum, self.rotate_from_internal(&self.outer) + datum)
     }
 
     pub fn rotate(&self, epsilon: AngleRadians) -> Self {
@@ -62,3 +69,4 @@ impl Member for Link {
         self.angles
     }
 }
+

@@ -1,18 +1,20 @@
 use std::error::Error;
+
 use cgmath::num_traits::real::Real;
 use itertools::Itertools;
 use vec_utils::angle::{AngleDegrees, AngleRadians};
-use vec_utils::vec3d::Vec3d;
-use vec_utils::geometry::sphere::Sphere;
 use vec_utils::geometry::circle::Circle;
 use vec_utils::geometry::intersection::sphere_circle;
+use vec_utils::geometry::sphere::Sphere;
+use vec_utils::vec3d::Vec3d;
+
 use crate::ANGLE_EPSILON_DEGREES;
 use crate::car::front::Front;
 use crate::car::members::h_arm::HArm;
 use crate::car::members::link::Link;
 use crate::graphics::vertex::Vertex;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Rear {
     pub harm_datum: Vec3d,
     pub harm: HArm,
@@ -26,15 +28,18 @@ impl Rear {
     pub fn motion_ratios(&self) -> Vec<f64> {
         let angle_steps = (360.0 / ANGLE_EPSILON_DEGREES) as usize;
         let damper = self.damper_body - self.harm_datum;
-        (0..angle_steps).map(|i| {
-            let angle_epsilon = AngleDegrees::new(ANGLE_EPSILON_DEGREES * i as f64);
-            self.harm.rotate(angle_epsilon.into())
-        }).circular_tuple_windows::<(_, _)>().map(|(i, j)| {
-            let z_delta = i.outer_rear.z - j.outer_rear.z;
-            let d_delta = damper.distance_to(&i.damper) -
-                damper.distance_to(&j.damper);
-            d_delta / z_delta
-        }).collect()
+        (0..angle_steps)
+            .map(|i| {
+                let angle_epsilon = AngleDegrees::new(ANGLE_EPSILON_DEGREES * i as f64);
+                self.harm.rotate(angle_epsilon.into())
+            })
+            .circular_tuple_windows::<(_, _)>()
+            .map(|(i, j)| {
+                let z_delta = i.outer_rear.z - j.outer_rear.z;
+                let d_delta = damper.distance_to(&i.damper) - damper.distance_to(&j.damper);
+                d_delta / z_delta
+            })
+            .collect()
     }
 
     // fn outer_upright_mounting_vec_global(&self) -> Vec3d {
@@ -66,7 +71,7 @@ impl Rear {
     //         &Vec3d::i()
     //     );
     //     let intersection_l = sphere_circle(&upright_sphere_l, &aarm_circle_l)
-    //         .ok_or("Intesection Error")?;
+    //         .ok_or("Intersection Error")?;
     //     let lower_angle_1 = intersection_l.1
     //         .project_onto_plane(&Vec3d::i())
     //         .angle_to(
@@ -94,20 +99,26 @@ impl Rear {
         let harm = self.harm.get_global(&self.harm_datum);
         let camber_link = self.camber_link.get_global(&self.camber_link_datum);
         let vertex_data = vec![
-            self.damper_body, harm.0, harm.1, harm.2, harm.3, harm.4, camber_link.0, camber_link.1
+            self.damper_body,
+            harm.0,
+            harm.1,
+            harm.2,
+            harm.3,
+            harm.4,
+            camber_link.0,
+            camber_link.1,
         ];
 
         (
-            vertex_data.iter().map(|i| {
-                let scaled = Vertex::from_vec3d(i, color).scale(500.0);
-                vec![
-                    scaled.mirror(),
-                    scaled
-                ]
-            }).concat(),
+            vertex_data
+                .iter()
+                .map(|i| {
+                    let scaled = Vertex::from_vec3d(i, color).scale(500.0);
+                    vec![scaled.mirror(), scaled]
+                })
+                .concat(),
             vec![
-                0, 10, 2, 6, 6, 8, 8, 4, 12, 14,
-                1, 11, 3, 7, 7, 9, 9, 5, 13, 15
+                0, 10, 2, 6, 6, 8, 8, 4, 12, 14, 1, 11, 3, 7, 7, 9, 9, 5, 13, 15,
             ]
         )
     }

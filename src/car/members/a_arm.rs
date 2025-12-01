@@ -1,9 +1,10 @@
 use vec_utils::angle::AngleRadians;
 use vec_utils::matrix::matrix3x3;
 use vec_utils::vec3d::Vec3d;
+
 use crate::car::members::Member;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct AArm {
     // NOTE: the applied rotation is stored in the j spot
     pub angles: Vec3d,
@@ -31,9 +32,21 @@ impl AArm {
         // roll
         let zx_angle = Vec3d::i().angle_to(&rear.project_onto_plane(&Vec3d::j()));
         let rotation_matrix = [
-            [xy_angle.cos() * yz_angle.cos(), xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(), xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()],
-            [xy_angle.cos() * yz_angle.sin(), xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(), xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()],
-            [-1.0 * yz_angle.sin(), xy_angle.sin() * yz_angle.cos(), xy_angle.cos() * yz_angle.cos()]
+            [
+                xy_angle.cos() * yz_angle.cos(),
+                xy_angle.sin() * yz_angle.sin() * zx_angle.cos() - xy_angle.cos() * zx_angle.sin(),
+                xy_angle.cos() * yz_angle.sin() * zx_angle.cos() + xy_angle.sin() * zx_angle.sin()
+            ],
+            [
+                xy_angle.cos() * yz_angle.sin(),
+                xy_angle.sin() * yz_angle.sin() * zx_angle.sin() + xy_angle.cos() * zx_angle.cos(),
+                xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()
+            ],
+            [
+                -1.0 * yz_angle.sin(),
+                xy_angle.sin() * yz_angle.cos(),
+                xy_angle.cos() * yz_angle.cos()
+            ]
         ];
 
         let rear = matrix3x3::mul(&rotation_matrix, &rear);
@@ -43,7 +56,12 @@ impl AArm {
         } else {
             None
         };
-        Self::new(Vec3d::new(xy_angle.into(), 0.0, zx_angle.into()), rear.magnitude(), outer, damper)
+        Self::new(
+            Vec3d::new(xy_angle.into(), 0.0, zx_angle.into()),
+            rear.magnitude(),
+            outer,
+            damper
+        )
     }
 
     // returns (front, rear, outer, Option<damper>)
@@ -86,4 +104,3 @@ impl Member for AArm {
         self.angles
     }
 }
-
