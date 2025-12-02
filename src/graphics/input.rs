@@ -1,6 +1,8 @@
+use eframe::wgpu;
 use vec_utils::angle::AngleDegrees;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
+
 use crate::ANGLE_EPSILON_DEGREES;
 use crate::car::Car;
 
@@ -30,7 +32,7 @@ impl InputHandler {
             pressed: Pressed::new()
         }
     }
-    
+
     pub fn process_events(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
@@ -56,17 +58,13 @@ impl InputHandler {
                         self.pressed.reset = is_pressed;
                         true
                     }
-                    _ => { 
-                        false
-                    }
+                    _ => false
                 }
             }
-            _ => {
-                false
-            },
+            _ => false
         }
     }
-    
+
     pub fn update_car(&self, ride: &Car, mut moved: &mut Car) -> (bool, bool) {
         let mut change = (false, false);
         if self.pressed.rotate_down {
@@ -83,3 +81,4 @@ impl InputHandler {
         change
     }
 }
+

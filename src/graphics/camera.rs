@@ -1,5 +1,7 @@
+use eframe::wgpu;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
+
 use crate::OPENGL_TO_WGPU_MATRIX;
 
 pub(crate) struct Camera {
@@ -9,7 +11,7 @@ pub(crate) struct Camera {
     pub(crate) aspect: f32,
     pub(crate) fovy: f32,
     pub(crate) znear: f32,
-    pub(crate) zfar: f32,
+    pub(crate) zfar: f32
 }
 
 impl Camera {
@@ -31,14 +33,14 @@ impl Camera {
 pub(crate) struct CameraUniform {
     // We can't use cgmath with bytemuck directly, so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
-    view_proj: [[f32; 4]; 4],
+    view_proj: [[f32; 4]; 4]
 }
 
 impl CameraUniform {
     pub(crate) fn new() -> Self {
         use cgmath::SquareMatrix;
         Self {
-            view_proj: cgmath::Matrix4::identity().into(),
+            view_proj: cgmath::Matrix4::identity().into()
         }
     }
 
@@ -143,10 +145,10 @@ impl CameraController {
                         self.pressed.pan_right = is_pressed;
                         true
                     }
-                    _ => false,
+                    _ => false
                 }
             }
-            _ => false,
+            _ => false
         }
     }
 
@@ -176,10 +178,12 @@ impl CameraController {
         // lies on the circle made by the target and eye.
 
         if self.pressed.orbit_down {
-            camera.eye = camera.target - (forward + camera.up * self.speed).normalize() * forward_mag;
+            camera.eye =
+                camera.target - (forward + camera.up * self.speed).normalize() * forward_mag;
         }
         if self.pressed.orbit_up {
-            camera.eye = camera.target - (forward - camera.up * self.speed).normalize() * forward_mag;
+            camera.eye =
+                camera.target - (forward - camera.up * self.speed).normalize() * forward_mag;
         }
         if self.pressed.orbit_left {
             camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
@@ -197,3 +201,4 @@ impl CameraController {
         // }
     }
 }
+

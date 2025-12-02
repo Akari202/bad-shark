@@ -1,34 +1,34 @@
-use eframe::{egui, egui_wgpu};
+use std::error::Error;
+use std::io::ErrorKind::AddrNotAvailable;
+use std::iter;
+
+use eframe::egui::Ui;
+use eframe::wgpu::util::DeviceExt;
+use eframe::{egui, egui_wgpu, wgpu};
+use itertools::{Itertools, concat};
+use log::info;
+use vec_utils::angle::{AngleDegrees, AngleRadians};
+use vec_utils::vec3d::Vec3d;
 
 use crate::car::Car;
 use crate::get_test_car;
+use crate::graphics::camera::{Camera, CameraController, CameraUniform};
+use crate::graphics::color::{BLACK, BLUE, DARK_GRAY, GREEN, MIDDLE, RED, WHITE, coordinate_axis};
+use crate::graphics::input::InputHandler;
+use crate::graphics::vertex::Vertex;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct BSApp {
-    renderer: BSRender
-}
-
-#[derive(serde::Deserialize, serde::Serialize)]
-#[serde(default)]
-pub struct BSRender {
-    #[serde(skip)]
-    moved_car: Car,
     ride_car: Car
 }
+
+#[derive(Default)]
+pub struct BSRender {}
 
 impl Default for BSApp {
     fn default() -> Self {
         Self {
-            renderer: BSRender::default()
-        }
-    }
-}
-
-impl Default for BSRender {
-    fn default() -> Self {
-        Self {
-            moved_car: get_test_car(),
             ride_car: get_test_car()
         }
     }
@@ -36,27 +36,56 @@ impl Default for BSRender {
 
 impl BSApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        if let Some(storage) = cc.storage {
+        let mut app: BSApp = if let Some(storage) = cc.storage {
             eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
             Default::default()
-        }
+        };
+        initialize_renderer(cc, app.ride_car);
+        app
     }
 }
 
-impl BSRender {
-    pub fn new<'a>(cc: &eframe::CreationContext<'_>) -> Self {
-        let wgpu_render_state = cc.wgpu_render_state.as_ref()?;
+fn initialize_renderer(cc: &eframe::CreationContext<'_>, car: Car) -> Result<(), Box<dyn Error>> {
+    let wgpu_render_state = cc
+        .wgpu_render_state
+        .as_ref()
+        .ok_or("No wgpu renderer exists")?;
 
-        let device = &wgpu_render_state.device;
+    let initial_size_f32 = cc.egui_ctx.content_rect().size();
+    let size = wgpu::Extent3d {
+        width: initial_size_f32.x as u32,
+        height: initial_size_f32.y as u32,
+        depth_or_array_layers: 1
+    };
+    let aspect = size.width as f32 / size.height as f32;
+    let device = &wgpu_render_state.device;
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("custom3d"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("custom_shader.wgsl").into())
-        });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into())
+    });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("custom3d"),
+    let camera = Camera {
+        eye: (5.0, 5.0, 5.0).into(),
+        target: (0.0, 0.0, 0.0).into(),
+        up: cgmath::Vector3::unit_z(),
+        aspect,
+        fovy: 45.0,
+        znear: 0.01,
+        zfar: 100.0
+    };
+    let mut camera_uniform = CameraUniform::new();
+    camera_uniform.update_view_proj(&camera);
+
+    let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Camera Buffer"),
+        contents: bytemuck::cast_slice(&[camera_uniform]),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+    });
+
+    let camera_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::VERTEX,
@@ -66,67 +95,103 @@ impl BSRender {
                     min_binding_size: None
                 },
                 count: None
-            }]
+            }],
+            label: Some("camera_bind_group_layout")
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("custom3d"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[]
+    let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &camera_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: camera_buffer.as_entire_binding()
+        }],
+        label: Some("camera_bind_group")
+    });
+
+    let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Render Pipeline Layout"),
+        bind_group_layouts: &[&camera_bind_group_layout],
+        push_constant_ranges: &[]
+    });
+
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(&render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[Vertex::desc()],
+            compilation_options: Default::default()
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: wgpu_render_state.target_format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent::REPLACE,
+                    alpha: wgpu::BlendComponent::REPLACE
+                }),
+                write_mask: wgpu::ColorWrites::ALL
+            })],
+            compilation_options: Default::default()
+        }),
+        primitive: wgpu::PrimitiveState {
+            // topology: wgpu::PrimitiveTopology::TriangleList,
+            topology: wgpu::PrimitiveTopology::LineList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: Some(wgpu::Face::Back),
+            // Setting this to anything other than Fill requires Features::POLYGON_MODE_LINE
+            // or Features::POLYGON_MODE_POINT
+            polygon_mode: wgpu::PolygonMode::Fill,
+            // Requires Features::DEPTH_CLIP_CONTROL
+            unclipped_depth: false,
+            // Requires Features::CONSERVATIVE_RASTERIZATION
+            conservative: false
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None
+    });
+
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: &[],
+        usage: wgpu::BufferUsages::VERTEX
+    });
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: &[],
+        usage: wgpu::BufferUsages::INDEX
+    });
+
+    let camera_controller = CameraController::new(0.025);
+    let input_handler = InputHandler::new();
+    let num_indices: u32 = 0;
+
+    wgpu_render_state
+        .renderer
+        .write()
+        .callback_resources
+        .insert(BSRenderResources {
+            render_pipeline,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
+            camera_controller,
+            vertex_buffer,
+            index_buffer,
+            num_indices,
+            moved_car: car,
+            ride_car: car,
+            input_handler
         });
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("custom3d"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: None,
-                buffers: &[],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu_render_state.target_format.into())],
-                compilation_options: wgpu::PipelineCompilationOptions::default()
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None
-        });
-
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("custom3d"),
-            contents: bytemuck::cast_slice(&[0.0_f32; 4]), // 16 bytes aligned!
-            // Mapping at creation (as done by the create_buffer_init utility) doesn't require us to to add the MAP_WRITE usage
-            // (this *happens* to workaround this bug )
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("custom3d"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding()
-            }]
-        });
-
-        // Because the graphics pipeline must have the same lifetime as the egui render pass,
-        // instead of storing the pipeline in our `Custom3D` struct, we insert it into the
-        // `paint_callback_resources` type map, which is stored alongside the render pass.
-        wgpu_render_state
-            .renderer
-            .write()
-            .callback_resources
-            .insert(TriangleRenderResources {
-                pipeline,
-                bind_group,
-                uniform_buffer
-            });
-    }
+    Ok(())
 }
 
 impl eframe::App for BSApp {
@@ -150,18 +215,14 @@ impl eframe::App for BSApp {
         });
         egui::SidePanel::left("Config").show(ctx, |ui| {
             ui.heading("My egui Application");
-            ui.horizontal(|ui| {
-                let name_label = ui.label("Your name: ");
-                ui.text_edit_singleline(&mut self.name)
-                    .labelled_by(name_label.id);
-            });
-            ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-            if ui.button("Increment").clicked() {
-                self.age += 1;
-            }
-            ui.label(format!("Hello {}, age {}", self.name, self.age));
+            ui.label("Your name: ");
+            if ui.button("Increment").clicked() {}
         });
-        egui::CentralPanel::default().show(ctx, |ui| {});
+        egui::CentralPanel::default().show(ctx, |ui| {
+            egui::Frame::canvas(ui.style()).show(ui, |ui| {
+                custom_painting(ui);
+            });
+        });
     }
 }
 
@@ -185,11 +246,9 @@ impl eframe::App for BSApp {
 //
 // The paint callback is called after finish prepare and is given access to egui's main render pass,
 // which can be used to issue draw commands.
-struct CustomTriangleCallback {
-    angle: f32
-}
+struct BSRenderCallback {}
 
-impl egui_wgpu::CallbackTrait for CustomTriangleCallback {
+impl egui_wgpu::CallbackTrait for BSRenderCallback {
     fn prepare(
         &self,
         device: &wgpu::Device,
@@ -198,8 +257,9 @@ impl egui_wgpu::CallbackTrait for CustomTriangleCallback {
         _egui_encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources
     ) -> Vec<wgpu::CommandBuffer> {
-        let resources: &TriangleRenderResources = resources.get().unwrap();
-        resources.prepare(device, queue, self.angle);
+        if let Some(resources) = resources.get_mut::<&mut BSRenderResources>() {
+            resources.prepare(device, queue);
+        }
         Vec::new()
     }
 
@@ -209,42 +269,109 @@ impl egui_wgpu::CallbackTrait for CustomTriangleCallback {
         render_pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources
     ) {
-        let resources: &TriangleRenderResources = resources.get().unwrap();
-        resources.paint(render_pass);
+        if let Some(resources) = resources.get::<&BSRenderResources>() {
+            resources.paint(render_pass);
+        }
     }
 }
 
-impl Custom3d {
-    fn custom_painting(&mut self, ui: &mut egui::Ui) {
-        let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(300.0), egui::Sense::drag());
+fn custom_painting(ui: &mut egui::Ui) {
+    let (id, rect) = ui.allocate_space(ui.available_size());
 
-        self.angle += response.drag_motion().x * 0.01;
-        ui.painter().add(egui_wgpu::Callback::new_paint_callback(
-            rect,
-            CustomTriangleCallback { angle: self.angle }
-        ));
-    }
+    ui.painter().add(egui_wgpu::Callback::new_paint_callback(
+        rect,
+        BSRenderCallback {}
+    ));
 }
 
 struct BSRenderResources {
-    pipeline: RenderPipeline,
-    bind_group: BindGroup,
-    uniform_buffer: Buffer
+    render_pipeline: wgpu::RenderPipeline,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    camera_controller: CameraController,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    moved_car: Car,
+    ride_car: Car,
+    input_handler: InputHandler
 }
 
 impl BSRenderResources {
-    fn prepare(&self, _device: &wgpu::Device, queue: &wgpu::Queue, angle: f32) {
+    fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.camera_controller.update_camera(&mut self.camera);
+        let update_car = self
+            .input_handler
+            .update_car(&self.ride_car, &mut self.moved_car);
+        if update_car.0 {
+            if update_car.1 {
+                self.moved_car = self.ride_car;
+            }
+            self.write_buffers(device, queue);
+        }
+        self.camera_uniform.update_view_proj(&self.camera);
         queue.write_buffer(
-            &self.uniform_buffer,
+            &self.camera_buffer,
             0,
-            bytemuck::cast_slice(&[angle, 0.0, 0.0, 0.0])
+            bytemuck::cast_slice(&[self.camera_uniform])
         );
     }
 
+    fn write_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let mut buffers: Vec<(Vec<Vertex>, Vec<u16>)> = Vec::new();
+
+        buffers = [buffers, self.ride_car.get_vertex_data(DARK_GRAY)].concat();
+
+        buffers = [buffers, self.moved_car.get_vertex_data(WHITE)].concat();
+
+        buffers.push(coordinate_axis());
+
+        self.update_buffers(device, queue, &buffers);
+    }
+
+    fn update_buffers(
+        &mut self,
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        data: &Vec<(Vec<Vertex>, Vec<u16>)>
+    ) {
+        let mut vertex_data: Vec<Vertex> = Vec::new();
+        let mut index_data: Vec<u16> = Vec::new();
+        let mut start: u16 = 0;
+
+        for (i, j) in data {
+            vertex_data = [vertex_data, i.clone()].concat();
+            index_data = [index_data, j.iter().map(|i| *i + start).collect()].concat();
+            start = vertex_data.len() as u16;
+        }
+
+        self.num_indices = index_data.len() as u32;
+        println!(
+            "{} Indices, {} Vertexs",
+            self.num_indices,
+            vertex_data.len()
+        );
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&*vertex_data));
+        queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&*index_data));
+        // self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: Some("Vertex Buffer"),
+        //     contents: bytemuck::cast_slice(&*vertex_data),
+        //     usage: wgpu::BufferUsages::VERTEX
+        // });
+        // self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: Some("Index Buffer"),
+        //     contents: bytemuck::cast_slice(&*index_data),
+        //     usage: wgpu::BufferUsages::INDEX
+        // });
+    }
+
     fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>) {
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
     }
 }

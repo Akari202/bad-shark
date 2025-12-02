@@ -1,3 +1,4 @@
+use eframe::wgpu;
 use vec_utils::vec3d::Vec3d;
 
 #[repr(C)]
@@ -10,18 +11,18 @@ pub struct Vertex {
 impl Vertex {
     pub fn from_vec3d(vector: &Vec3d, color: [f32; 3]) -> Self {
         Self {
-            position: [
-                vector.x as f32,
-                vector.y as f32,
-                vector.z as f32
-            ],
+            position: [vector.x as f32, vector.y as f32, vector.z as f32],
             color
         }
     }
 
     pub fn scale(&self, scale: f32) -> Self {
         Self {
-            position: [self.position[0] / scale, self.position[1] / scale, self.position[2] / scale],
+            position: [
+                self.position[0] / scale,
+                self.position[1] / scale,
+                self.position[2] / scale
+            ],
             color: self.color
         }
     }
@@ -45,12 +46,12 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x3
                 },
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x3
                 }
             ]
         }

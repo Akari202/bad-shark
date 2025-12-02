@@ -8,19 +8,17 @@ license = "GPL-3"
 
 [dependencies]
 bytemuck = { version = "1.19.0", features = ["derive"] }
-cfg-if = "1.0.0"
+cfg-if = "1.0.4"
 cgmath = "0.18.0"
-eframe = { version = "0.33.2", features = ["persistence"] }
-env_logger = "0.11.5"
-itertools = "0.13.0"
+eframe = { version = "0.33.2", features = ["persistence", "wgpu"] }
+env_logger = "0.11.8"
+itertools = "0.14.0"
 log = "0.4.22"
 pollster = "0.3.0"
-rayon = "1.10.0"
+rayon = "1.11.0"
 serde = { version = "1.0.219", features = ["derive"] }
-vec-utils = { path = "../vec-utils/vec-utils/", version = "0.2.1", features = [
-  "serde"
+vec-utils = { path = "../vec-utils/vec-utils/", version = "0.2.3", features = [
+  "serde",
+  "std"
 ] }
-wasm-bindgen = "0.2.95"
-web-sys = "0.3.72"
-wgpu = "22.1.0"
-winit = { version = "0.29.15", features = ["rwh_05"] }
+winit = { version = "0.30.12", features = ["rwh_05"] }
