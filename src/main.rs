@@ -15,7 +15,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     eframe::run_native(
         "Bad Shark",
         options,
-        Box::new(|cc| Ok(Box::new(BSApp::new(cc))))
+        Box::new(|cc| {
+            let app = BSApp::new(cc).map_err(|e| e.to_string())?;
+            Ok(Box::new(app))
+        })
     )?;
     Ok(())
 }

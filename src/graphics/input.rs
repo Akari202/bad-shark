@@ -65,20 +65,23 @@ impl InputHandler {
         }
     }
 
-    pub fn update_car(&self, ride: &Car, mut moved: &mut Car) -> (bool, bool) {
-        let mut change = (false, false);
-        if self.pressed.rotate_down {
-            moved.rotate(AngleDegrees::new(-1.0 * ANGLE_EPSILON_DEGREES));
-            change.0 = true;
+    pub fn update_car(&self, moved: Option<&mut Car>) -> (bool, bool) {
+        if self.pressed.reset || moved.is_none() {
+            return (true, true);
         }
-        if self.pressed.rotate_up {
-            moved.rotate(AngleDegrees::new(ANGLE_EPSILON_DEGREES));
-            change.0 = true;
+        let rotation = if self.pressed.rotate_down {
+            -ANGLE_EPSILON_DEGREES
+        } else {
+            0.0
+        } + if self.pressed.rotate_up {
+            ANGLE_EPSILON_DEGREES
+        } else {
+            0.0
+        };
+        if rotation != 0.0 {
+            moved.unwrap().rotate(AngleDegrees::new(rotation));
+            return (true, false);
         }
-        if self.pressed.reset {
-            change = (true, true);
-        }
-        change
+        (false, false)
     }
 }
-
