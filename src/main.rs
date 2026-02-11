@@ -3,9 +3,11 @@ use std::error::Error;
 
 use bad_shark::BSApp;
 use eframe::egui;
+use env_logger::Env;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
+    // egui_logger::builder().init().unwrap();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),

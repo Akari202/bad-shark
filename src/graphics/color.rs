@@ -1,4 +1,6 @@
+#![allow(dead_code)]
 use vec_utils::vec3d::Vec3d;
+
 use crate::graphics::vertex::Vertex;
 
 pub type Color = [f32; 3];
@@ -18,10 +20,8 @@ pub(crate) fn coordinate_axis() -> (Vec<Vertex>, Vec<u16>) {
             Vertex::from_vec3d(&Vec3d::zero(), MIDDLE),
             Vertex::from_vec3d(&Vec3d::i(), [1.0, 0.2, 0.2]),
             Vertex::from_vec3d(&Vec3d::j(), [0.2, 1.0, 0.2]),
-            Vertex::from_vec3d(&Vec3d::k(), [0.2, 0.2, 1.0])
+            Vertex::from_vec3d(&Vec3d::k(), [0.2, 0.2, 1.0]),
         ],
-        vec![
-            0, 1, 0, 2, 0, 3
-        ]
+        vec![0, 1, 0, 2, 0, 3]
     )
 }

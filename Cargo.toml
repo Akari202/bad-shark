@@ -11,13 +11,14 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 cfg-if = "1.0.4"
 cgmath = "0.18.0"
 eframe = { version = "0.33.3", features = ["persistence", "wgpu"] }
-env_logger = "0.11.8"
+egui_logger = "0.9.2"
+env_logger = "0.11.9"
 itertools = "0.14.0"
 log = "0.4.29"
 pollster = "0.4.0"
 rayon = "1.11.0"
 serde = { version = "1.0.219", features = ["derive"] }
-vec-utils = { path = "../vec-utils/vec-utils/", version = "0.3.0", features = [
+vec-utils = { path = "../vec-utils/vec-utils/", version = "0.3.1", features = [
   "matrix",
   "serde",
   "std"

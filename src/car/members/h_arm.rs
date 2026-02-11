@@ -81,7 +81,7 @@ impl HArm {
     // returns (front, rear, outer_front, outer_rear, damper)
     pub fn get_global(&self, datum: &Vec3d) -> (Vec3d, Vec3d, Vec3d, Vec3d, Vec3d) {
         (
-            datum.clone(),
+            *datum,
             self.rotate_from_internal(&(self.rear * Vec3d::i())) + datum,
             self.rotate_from_internal(&self.outer_front) + datum,
             self.rotate_from_internal(&self.outer_rear) + datum,
@@ -92,7 +92,7 @@ impl HArm {
     pub fn rotate(&self, epsilon: AngleRadians) -> Self {
         let rotation_matrix = Matrix3x3::from_nested_arr([
             [1.0, 0.0, 0.0],
-            [0.0, epsilon.cos(), -1.0 * epsilon.sin()],
+            [0.0, epsilon.cos(), -epsilon.sin()],
             [0.0, epsilon.sin(), epsilon.cos()]
         ]);
         let outer_front = (rotation_matrix * self.outer_front.to_vmatrix()).to_vec3d();

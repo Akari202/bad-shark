@@ -98,7 +98,7 @@ impl Rear {
     pub(crate) fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
         let harm = self.harm.get_global(&self.harm_datum);
         let camber_link = self.camber_link.get_global(&self.camber_link_datum);
-        let vertex_data = vec![
+        let vertex_data = [
             self.damper_body,
             harm.0,
             harm.1,
@@ -106,7 +106,7 @@ impl Rear {
             harm.3,
             harm.4,
             camber_link.0,
-            camber_link.1,
+            camber_link.1
         ];
 
         (

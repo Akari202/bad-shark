@@ -2,7 +2,7 @@ use std::error::Error;
 
 use cgmath::num_traits::real::Real;
 use itertools::Itertools;
-use log::info;
+use log::{debug, info};
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::geometry::circle::Circle;
 use vec_utils::geometry::intersection::sphere_circle;
@@ -77,18 +77,21 @@ impl Front {
         );
         let intersection_l =
             sphere_circle(&upright_sphere_l, &aarm_circle_l).ok_or("Intersection Error")?;
-        let lower_angle_1 = intersection_l
-            .1
-            .project_onto_plane(&Vec3d::i())
-            .angle_to(&self.lower.outer.project_onto_plane(&Vec3d::i()));
-        let lower_angle_2 = intersection_l
-            .0
-            .project_onto_plane(&Vec3d::i())
-            .angle_to(&self.lower.outer.project_onto_plane(&Vec3d::i()));
-        let lower_angle = lower_angle_1.min(lower_angle_2) * f64::from(angle.to_radians()).signum();
-        println!(
-            "Upper AArm angle change: {}, Lower AArm angle change: {}",
-            angle,
+
+        let axis = Vec3d::i();
+        let current_lower_proj = self.lower.outer.project_onto_plane(&axis);
+        let delta_0 =
+            current_lower_proj.signed_angle_to(&intersection_l.0.project_onto_plane(&axis), &axis);
+        let delta_1 =
+            current_lower_proj.signed_angle_to(&intersection_l.1.project_onto_plane(&axis), &axis);
+        let lower_angle = if delta_0.abs() < delta_1.abs() {
+            delta_0
+        } else {
+            delta_1
+        };
+
+        debug!(
+            "Upper AArm angle change: {angle}, Lower AArm angle change: {}. Possibilities: {delta_0} and {delta_1}",
             lower_angle.to_degrees()
         );
         self.upper = rotated_upper;
@@ -101,7 +104,7 @@ impl Front {
     pub(crate) fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {
         let upper = self.upper.get_global(&self.upper_datum);
         let lower = self.lower.get_global(&self.lower_datum);
-        let vertex_data = vec![
+        let vertex_data = [
             upper.0,
             upper.1,
             upper.2,
@@ -109,7 +112,7 @@ impl Front {
             lower.1,
             lower.2,
             upper.3.unwrap(),
-            self.damper_body,
+            self.damper_body
         ];
 
         (

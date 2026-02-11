@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use itertools::Itertools;
+use log::info;
 use vec_utils::angle::AngleDegrees;
 
 use crate::car::front::Front;
@@ -15,7 +16,7 @@ mod wheel;
 
 #[derive(PartialEq, Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct Car {
-    front: Front,
+    pub front: Front,
     rear: Rear
 }
 

@@ -36,7 +36,7 @@ impl Link {
                 xy_angle.cos() * yz_angle.sin() * zx_angle.sin() - xy_angle.sin() * zx_angle.cos()
             ],
             [
-                -1.0 * yz_angle.sin(),
+                -yz_angle.sin(),
                 xy_angle.sin() * yz_angle.cos(),
                 xy_angle.cos() * yz_angle.cos()
             ]
@@ -53,7 +53,7 @@ impl Link {
     pub fn rotate(&self, epsilon: AngleRadians) -> Self {
         let rotation_matrix = Matrix3x3::from_nested_arr([
             [1.0, 0.0, 0.0],
-            [0.0, epsilon.cos(), -1.0 * epsilon.sin()],
+            [0.0, epsilon.cos(), -epsilon.sin()],
             [0.0, epsilon.sin(), epsilon.cos()]
         ]);
         let outer = (rotation_matrix * self.outer.to_vmatrix()).to_vec3d();

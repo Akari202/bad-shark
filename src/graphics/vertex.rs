@@ -29,7 +29,7 @@ impl Vertex {
 
     pub fn mirror(&self) -> Self {
         Self {
-            position: [self.position[0], self.position[1] * -1.0, self.position[2]],
+            position: [self.position[0], -self.position[1], self.position[2]],
             color: self.color
         }
     }

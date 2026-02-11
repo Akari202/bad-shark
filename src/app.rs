@@ -1,33 +1,96 @@
+use core::{f32, f64};
 use std::error::Error;
-use std::io::ErrorKind::AddrNotAvailable;
-use std::iter;
 
+use cgmath::num_traits::Signed;
 use eframe::egui::{Ui, Vec2};
 use eframe::wgpu::util::DeviceExt;
 use eframe::{egui, egui_wgpu, wgpu};
 use itertools::{Itertools, concat};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use vec_utils::angle::{AngleDegrees, AngleRadians};
 use vec_utils::vec3d::Vec3d;
 
 use crate::car::Car;
-use crate::get_test_car;
-use crate::graphics::camera::{Camera, CameraController, CameraUniform};
+use crate::graphics::camera::{Camera, CameraUniform};
 use crate::graphics::color::{BLACK, BLUE, DARK_GRAY, GREEN, MIDDLE, RED, WHITE, coordinate_axis};
 use crate::graphics::vertex::Vertex;
+use crate::{ANGLE_EPSILON_DEGREES, get_test_car};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct BSApp {
-    ride_car: Car /* #[serde(skip_serializing)]
-                   * callback_data: CallbackData */
+    ride_car: Car,
+    callback_data: AppRenderCallbackData
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct AppRenderCallbackData {
+    #[serde(skip_serializing)]
+    reset_camera: bool,
+    #[serde(skip_serializing)]
+    reset_car: bool,
+    #[serde(skip_serializing)]
+    debug_print: bool,
+    motion: f64
+}
+
+struct BSRenderResources {
+    render_pipeline: wgpu::RenderPipeline,
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    moved_car: Option<Car>,
+    ride_car: Car,
+    current_motion: f64,
+    stop_moving: StopDirection
+}
+
+#[derive(Default, Debug, PartialEq)]
+enum StopDirection {
+    Positive,
+    #[default]
+    None,
+    Negative
+}
+
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+pub enum InteractionMode {
+    Orbit(Vec2),
+    Pan(Vec2),
+    #[default]
+    None
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+struct BSRenderCallback {
+    interaction_mode: InteractionMode,
+    scroll_delta: Option<f32>,
+    reset_camera: bool,
+    reset_car: bool,
+    debug_print: bool,
+    motion: f64
 }
 
 impl Default for BSApp {
     fn default() -> Self {
         Self {
-            ride_car: get_test_car()
+            ride_car: get_test_car(),
+            callback_data: AppRenderCallbackData::default()
         }
+    }
+}
+
+impl AppRenderCallbackData {
+    fn reset(&mut self) {
+        self.reset_car = false;
+        self.reset_camera = false;
+        self.debug_print = false;
     }
 }
 
@@ -178,7 +241,9 @@ impl BSApp {
                 index_buffer,
                 num_indices,
                 moved_car: None,
-                ride_car: app.ride_car
+                ride_car: app.ride_car,
+                current_motion: 0.0,
+                stop_moving: StopDirection::default()
             });
 
         Ok(app)
@@ -205,15 +270,43 @@ impl eframe::App for BSApp {
             });
         });
         egui::SidePanel::left("Config").show(ctx, |ui| {
-            ui.heading("My egui Application");
-            ui.label("Your name: ");
-            if ui.button("Reset Car").clicked() {
-                // self.callback_data.reset = true;
-            }
+            ui.with_layout(
+                egui::Layout::top_down_justified(egui::Align::Center),
+                |ui| {
+                    ui.heading("Reset Buttons");
+                    if ui.button("Reset Car").clicked() {
+                        self.callback_data.reset_car = true;
+                        self.callback_data.motion = 0.0;
+                    }
+                    if ui.button("Reset Camera").clicked() {
+                        self.callback_data.reset_camera = true;
+                    }
+                    ui.heading("Motion");
+                    ui.scope(|ui| {
+                        ui.spacing_mut().slider_width = ui.available_width()
+                            - ui.spacing().interact_size.x
+                            - ui.spacing().button_padding.x
+                            - 4.0;
+                        ui.add(
+                            egui::Slider::new(&mut self.callback_data.motion, -100.0..=40.0)
+                                .update_while_editing(false)
+                        );
+                    });
+                    ui.heading("Debug");
+                    if ui.button("Print Car").clicked() {
+                        self.callback_data.debug_print = true;
+                    }
+
+                    // ui.heading("Logs");
+                    // egui_logger::logger_ui().show(ui);
+                }
+            );
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::Frame::canvas(ui.style()).show(ui, |ui| {
-                self.custom_painting(ui);
+                let callback_data = self.callback_data;
+                self.callback_data.reset();
+                self.custom_painting(ui, &callback_data);
             });
         });
     }
@@ -239,10 +332,6 @@ impl eframe::App for BSApp {
 //
 // The paint callback is called after finish prepare and is given access to egui's main render pass,
 // which can be used to issue draw commands.
-struct BSRenderCallback {
-    drag_delta: Option<Vec2>,
-    scroll_delta: Option<f32>
-}
 
 impl egui_wgpu::CallbackTrait for BSRenderCallback {
     fn prepare(
@@ -276,12 +365,22 @@ impl egui_wgpu::CallbackTrait for BSRenderCallback {
 }
 
 impl BSApp {
-    fn custom_painting(&mut self, ui: &mut egui::Ui) {
+    fn custom_painting(&mut self, ui: &mut egui::Ui, callback_data: &AppRenderCallbackData) {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::drag());
-        let drag_delta = if response.dragged() {
-            Some(response.drag_delta())
+        let interaction_mode = if response.dragged() {
+            let delta = response.drag_delta();
+            ui.input(|i| {
+                // if i.pointer.button_down(egui::PointerButton::Middle) {
+                if i.pointer.button_down(egui::PointerButton::Primary) {
+                    InteractionMode::Orbit(delta)
+                } else if i.pointer.button_down(egui::PointerButton::Secondary) {
+                    InteractionMode::Pan(delta)
+                } else {
+                    InteractionMode::None
+                }
+            })
         } else {
-            None
+            InteractionMode::None
         };
 
         let scroll_delta = if response.hovered() {
@@ -299,24 +398,15 @@ impl BSApp {
         ui.painter().add(egui_wgpu::Callback::new_paint_callback(
             rect,
             BSRenderCallback {
-                drag_delta,
-                scroll_delta
+                interaction_mode,
+                scroll_delta,
+                reset_car: callback_data.reset_car,
+                reset_camera: callback_data.reset_camera,
+                motion: callback_data.motion,
+                debug_print: callback_data.debug_print
             }
         ));
     }
-}
-
-struct BSRenderResources {
-    render_pipeline: wgpu::RenderPipeline,
-    camera: Camera,
-    camera_uniform: CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    moved_car: Option<Car>,
-    ride_car: Car
 }
 
 impl BSRenderResources {
@@ -326,15 +416,49 @@ impl BSRenderResources {
         queue: &wgpu::Queue,
         callback_info: &BSRenderCallback
     ) {
-        if let Some(delta) = callback_info.drag_delta {
-            self.camera.orbit(delta);
+        match callback_info.interaction_mode {
+            InteractionMode::Pan(delta) => {
+                self.camera.pan(delta);
+            }
+            InteractionMode::Orbit(delta) => {
+                self.camera.orbit(delta);
+            }
+            InteractionMode::None => {}
         }
         if let Some(delta) = callback_info.scroll_delta {
             self.camera.zoom(delta);
         }
-        if self.moved_car.is_none() {
+        if self.moved_car.is_none()
+            || callback_info.reset_car && self.current_motion.abs() > f64::EPSILON
+        {
             self.moved_car = Some(self.ride_car);
+            self.current_motion = 0.0;
+            self.stop_moving = StopDirection::None;
             self.write_buffers(device, queue);
+        } else if (self.current_motion - callback_info.motion).abs() > f64::EPSILON {
+            let delta = (self.current_motion - callback_info.motion)
+                .clamp(-ANGLE_EPSILON_DEGREES, ANGLE_EPSILON_DEGREES);
+            if self.stop_moving.dir_ok(delta) {
+                if let Err(e) = self
+                    .moved_car
+                    .as_mut()
+                    .unwrap()
+                    .rotate(AngleDegrees::new(delta))
+                {
+                    error!(
+                        "Error rotating car: {e}. Current motion: {}",
+                        self.current_motion
+                    );
+                    self.stop_moving = StopDirection::from_f64(delta);
+                } else {
+                    self.current_motion -= delta;
+                    self.write_buffers(device, queue);
+                    self.stop_moving = StopDirection::None;
+                }
+            }
+        }
+        if callback_info.reset_camera {
+            self.camera.reset();
         }
         self.camera_uniform.update_view_proj(&self.camera);
         queue.write_buffer(
@@ -342,6 +466,9 @@ impl BSRenderResources {
             0,
             bytemuck::cast_slice(&[self.camera_uniform])
         );
+        if callback_info.debug_print {
+            dbg!(self.moved_car.map(|car| car.front));
+        }
     }
 
     fn write_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
@@ -358,7 +485,7 @@ impl BSRenderResources {
     fn update_buffers(
         &mut self,
         device: &wgpu::Device,
-        _queue: &wgpu::Queue,
+        queue: &wgpu::Queue,
         data: &Vec<(Vec<Vertex>, Vec<u16>)>
     ) {
         let mut vertex_data: Vec<Vertex> = Vec::new();
@@ -372,23 +499,34 @@ impl BSRenderResources {
         }
 
         self.num_indices = index_data.len() as u32;
-        println!(
+        debug!(
             "{} Indices, {} Vertexs",
             self.num_indices,
             vertex_data.len()
         );
-        // queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&vertex_data));
-        // queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&index_data));
-        self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&vertex_data),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
-        });
-        self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&index_data),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
-        });
+
+        let v_bytes = bytemuck::cast_slice(&vertex_data);
+        let i_bytes = bytemuck::cast_slice(&index_data);
+
+        if self.vertex_buffer.size() == v_bytes.len() as u64 {
+            queue.write_buffer(&self.vertex_buffer, 0, v_bytes);
+        } else {
+            self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: v_bytes,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            });
+        }
+
+        if self.index_buffer.size() == i_bytes.len() as u64 {
+            queue.write_buffer(&self.index_buffer, 0, i_bytes);
+        } else {
+            self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: i_bytes,
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST
+            });
+        }
     }
 
     fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>) {
@@ -400,5 +538,25 @@ impl BSRenderResources {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
+    }
+}
+
+impl StopDirection {
+    fn from_f64(value: f64) -> Self {
+        if value > 0.0 {
+            StopDirection::Positive
+        } else if value < 0.0 {
+            StopDirection::Negative
+        } else {
+            StopDirection::None
+        }
+    }
+
+    fn dir_ok(&self, value: f64) -> bool {
+        match self {
+            StopDirection::Positive => value < 0.0,
+            StopDirection::Negative => value > 0.0,
+            StopDirection::None => true
+        }
     }
 }

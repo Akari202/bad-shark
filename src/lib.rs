@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::car::test_car::get_test_car;
 use crate::graphics::vertex::Vertex;
 
