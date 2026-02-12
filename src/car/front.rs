@@ -99,6 +99,13 @@ impl Front {
         Ok(())
     }
 
+    pub fn get_damper_length(&self) -> Option<f64> {
+        self.upper
+            .get_global(&self.upper_datum)
+            .3
+            .map(|aarm_damper| self.damper_body.distance_to(&aarm_damper))
+    }
+
     pub fn print_coordinates(&self) {}
 
     pub(crate) fn get_vertex_data(&self, color: [f32; 3]) -> (Vec<Vertex>, Vec<u16>) {

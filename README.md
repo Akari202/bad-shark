@@ -1,22 +1,21 @@
 # Bad SHARK
 
-An experimental suspension kinematics program intended to (eventually) provide similar features and calculations as Lotus SHARK or SusProg. 
+An experimental suspension kinematics program intended to (eventually) provide similar features and calculations as Lotus SHARK or SusProg.
 
 This is a side project, work will be sporadic.
-
 
 This was originally a command line based program, but it made debugging a pain,
 in order to properly visualize what was happening I was printing sets of points and importing into solidworks.
 So i broke down and hacked some wgpu together to be able to properly see what's happening.
-Tbh im kinda suprised how smoothly the whole thing went, it only really took an evening to get a window
+Tbh im kinda surprised how smoothly the whole thing went, it only really took an evening to get a window
 with geometry in it, couldn't be vulkan. Graphics and UI are a secondary priority, right now im focusing on
 getting complete calculations for the double wishbone and inverted h-arm with camber link style suspensions
 as is employed on the Clarkson Baja Team's car.
 
 ## Usage
 
-If you want to use I don't particularly want to share my car's geometry. 
-The geometry for now is stored in `src/car/test_car.rs` which is included below with all values turned to 0. 
+If you want to use I don't particularly want to share my car's geometry.
+The geometry for now is stored in `src/car/test_car.rs` which is included below with all values turned to 0.
 
 ```rust
 use vec_utils::vec3d::Vec3d;

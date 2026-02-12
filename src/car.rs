@@ -17,7 +17,7 @@ mod wheel;
 #[derive(PartialEq, Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct Car {
     pub front: Front,
-    rear: Rear
+    pub rear: Rear
 }
 
 impl Car {

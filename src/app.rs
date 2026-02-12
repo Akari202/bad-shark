@@ -1,5 +1,6 @@
 use core::{f32, f64};
 use std::error::Error;
+use std::sync::{Arc, Mutex};
 
 use cgmath::num_traits::Signed;
 use eframe::egui::{Ui, Vec2};
@@ -18,9 +19,19 @@ use crate::{ANGLE_EPSILON_DEGREES, get_test_car};
 
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)]
+#[derive(Clone, Default, Copy, Debug)]
+struct SharedCarState {
+    caster: AngleDegrees,
+    damper_length: (f64, f64)
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct BSApp {
     ride_car: Car,
-    callback_data: AppRenderCallbackData
+    callback_data: AppRenderCallbackData,
+    #[serde(skip_serializing)]
+    shared_state: Arc<Mutex<SharedCarState>>
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -33,7 +44,11 @@ pub struct AppRenderCallbackData {
     reset_car: bool,
     #[serde(skip_serializing)]
     debug_print: bool,
-    motion: f64
+    motion: f64,
+    #[serde(skip_serializing)]
+    caster: AngleDegrees,
+    show_ride: bool,
+    need_repaint: bool
 }
 
 struct BSRenderResources {
@@ -48,7 +63,8 @@ struct BSRenderResources {
     moved_car: Option<Car>,
     ride_car: Car,
     current_motion: f64,
-    stop_moving: StopDirection
+    stop_moving: StopDirection,
+    shared_state: Arc<Mutex<SharedCarState>>
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -74,14 +90,17 @@ struct BSRenderCallback {
     reset_camera: bool,
     reset_car: bool,
     debug_print: bool,
-    motion: f64
+    motion: f64,
+    show_ride: bool,
+    need_repaint: bool
 }
 
 impl Default for BSApp {
     fn default() -> Self {
         Self {
             ride_car: get_test_car(),
-            callback_data: AppRenderCallbackData::default()
+            callback_data: AppRenderCallbackData::default(),
+            shared_state: Arc::new(Mutex::new(SharedCarState::default()))
         }
     }
 }
@@ -91,6 +110,7 @@ impl AppRenderCallbackData {
         self.reset_car = false;
         self.reset_camera = false;
         self.debug_print = false;
+        self.need_repaint = false;
     }
 }
 
@@ -227,6 +247,8 @@ impl BSApp {
             Default::default()
         };
 
+        let shared_state = app.shared_state.clone();
+
         wgpu_render_state
             .renderer
             .write()
@@ -243,7 +265,8 @@ impl BSApp {
                 moved_car: None,
                 ride_car: app.ride_car,
                 current_motion: 0.0,
-                stop_moving: StopDirection::default()
+                stop_moving: StopDirection::default(),
+                shared_state
             });
 
         Ok(app)
@@ -274,27 +297,52 @@ impl eframe::App for BSApp {
                 egui::Layout::top_down_justified(egui::Align::Center),
                 |ui| {
                     ui.heading("Reset Buttons");
-                    if ui.button("Reset Car").clicked() {
-                        self.callback_data.reset_car = true;
-                        self.callback_data.motion = 0.0;
-                    }
-                    if ui.button("Reset Camera").clicked() {
-                        self.callback_data.reset_camera = true;
-                    }
+                    ui.columns(3, |ui| {
+                        if ui[0].button("Reset Car").clicked() {
+                            self.callback_data.reset_car = true;
+                            self.callback_data.motion = 0.0;
+                        }
+                        if ui[1].button("Reset Camera").clicked() {
+                            self.callback_data.reset_camera = true;
+                        }
+                        if ui[2].button("Print Car").clicked() {
+                            self.callback_data.debug_print = true;
+                        }
+                    });
+                    if ui
+                        .checkbox(&mut self.callback_data.show_ride, "Show Ride Height")
+                        .clicked()
+                    {
+                        self.callback_data.need_repaint = true;
+                    };
+                    ui.separator();
                     ui.heading("Motion");
                     ui.scope(|ui| {
                         ui.spacing_mut().slider_width = ui.available_width()
                             - ui.spacing().interact_size.x
                             - ui.spacing().button_padding.x
-                            - 4.0;
+                            - 5.0;
                         ui.add(
                             egui::Slider::new(&mut self.callback_data.motion, -100.0..=40.0)
                                 .update_while_editing(false)
                         );
                     });
-                    ui.heading("Debug");
-                    if ui.button("Print Car").clicked() {
-                        self.callback_data.debug_print = true;
+
+                    ui.heading("Data");
+
+                    if let Ok(state) = self.shared_state.lock() {
+                        ui.horizontal(|ui| {
+                            ui.label("Caster Angle:");
+                            ui.strong(format!("{}", state.caster));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Front Damper Length:");
+                            ui.strong(format!("{:.2}", state.damper_length.0));
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Rear Damper Length:");
+                            ui.strong(format!("{:.2}", state.damper_length.1));
+                        });
                     }
 
                     // ui.heading("Logs");
@@ -402,8 +450,10 @@ impl BSApp {
                 scroll_delta,
                 reset_car: callback_data.reset_car,
                 reset_camera: callback_data.reset_camera,
+                need_repaint: callback_data.need_repaint,
                 motion: callback_data.motion,
-                debug_print: callback_data.debug_print
+                debug_print: callback_data.debug_print,
+                show_ride: callback_data.show_ride
             }
         ));
     }
@@ -434,7 +484,12 @@ impl BSRenderResources {
             self.moved_car = Some(self.ride_car);
             self.current_motion = 0.0;
             self.stop_moving = StopDirection::None;
-            self.write_buffers(device, queue);
+            if let Ok(mut state) = self.shared_state.lock()
+                && let Some(car) = &self.moved_car
+            {
+                state.caster = car.front.caster_angle().into()
+            }
+            self.write_buffers(device, queue, callback_info);
         } else if (self.current_motion - callback_info.motion).abs() > f64::EPSILON {
             let delta = (self.current_motion - callback_info.motion)
                 .clamp(-ANGLE_EPSILON_DEGREES, ANGLE_EPSILON_DEGREES);
@@ -452,10 +507,19 @@ impl BSRenderResources {
                     self.stop_moving = StopDirection::from_f64(delta);
                 } else {
                     self.current_motion -= delta;
-                    self.write_buffers(device, queue);
+                    self.write_buffers(device, queue, callback_info);
                     self.stop_moving = StopDirection::None;
+                    if let Ok(mut state) = self.shared_state.lock()
+                        && let Some(car) = &self.moved_car
+                    {
+                        state.caster = car.front.caster_angle().into();
+                        state.damper_length.0 = car.front.get_damper_length().unwrap_or(f64::NAN);
+                        state.damper_length.1 = car.rear.get_damper_length();
+                    }
                 }
             }
+        } else if callback_info.need_repaint {
+            self.write_buffers(device, queue, callback_info);
         }
         if callback_info.reset_camera {
             self.camera.reset();
@@ -471,10 +535,17 @@ impl BSRenderResources {
         }
     }
 
-    fn write_buffers(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    fn write_buffers(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        callback_info: &BSRenderCallback
+    ) {
         let mut buffers: Vec<(Vec<Vertex>, Vec<u16>)> = Vec::new();
 
-        buffers = [buffers, self.ride_car.get_vertex_data(DARK_GRAY)].concat();
+        if callback_info.show_ride {
+            buffers = [buffers, self.ride_car.get_vertex_data(DARK_GRAY)].concat();
+        }
 
         buffers = [buffers, self.moved_car.unwrap().get_vertex_data(WHITE)].concat();
 
@@ -508,7 +579,7 @@ impl BSRenderResources {
         let v_bytes = bytemuck::cast_slice(&vertex_data);
         let i_bytes = bytemuck::cast_slice(&index_data);
 
-        if self.vertex_buffer.size() == v_bytes.len() as u64 {
+        if self.vertex_buffer.size() >= v_bytes.len() as u64 {
             queue.write_buffer(&self.vertex_buffer, 0, v_bytes);
         } else {
             self.vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -518,7 +589,7 @@ impl BSRenderResources {
             });
         }
 
-        if self.index_buffer.size() == i_bytes.len() as u64 {
+        if self.index_buffer.size() >= i_bytes.len() as u64 {
             queue.write_buffer(&self.index_buffer, 0, i_bytes);
         } else {
             self.index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

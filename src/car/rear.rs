@@ -57,6 +57,13 @@ impl Rear {
         Ok(())
     }
 
+    pub fn get_damper_length(&self) -> f64 {
+        self.harm
+            .get_global(&self.harm_datum)
+            .4
+            .distance_to(&self.damper_body)
+    }
+
     // pub fn rotate_upper_aarm(&mut self, angle: AngleDegrees) -> Result<(), Box<dyn Error>> {
     //     let rotated_upper = self.upper.rotate(angle.into());
     //     let upper_outer_g = rotated_upper.unrotate_from_internal(&rotated_upper.outer) + self.upper_datum;
